@@ -21,7 +21,6 @@ from scipy import signal
 from functorch import vmap
 
 from TRGAN.encoders import *
-import TRGAN.NormalizationFlows as flows
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
