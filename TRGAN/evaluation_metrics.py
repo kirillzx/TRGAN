@@ -20,7 +20,22 @@ def evaluate_numerical(data_array, index):
     std_values = list(map(lambda x: x.std(), data_array))
     kurt_values = list(map(lambda x: x.kurtosis(), data_array))
     skew_values = list(map(lambda x: x.skew(), data_array))
-    js_values = list(map(lambda x: jensenshannon(data_array[0], x), data_array))
+    js_values = list(map(lambda x: jensenshannon(np.sort(data_array[0]), np.sort(x)), data_array))
+    ks_values = list(map(lambda x: ks_2samp(data_array[0], x)[0], data_array))
+    wd_values = list(map(lambda x: wasserstein_distance(data_array[0], x), data_array))
+
+    metrics = np.array([mean_values, std_values, kurt_values, skew_values, js_values, ks_values, wd_values]).T
+    res_df = pd.DataFrame(metrics, columns=['Mean', 'Std', 'Kurtosis', 'Skewness', 'D_JS', 'KS2test', 'Wassertein distance'],\
+                           index=index)
+
+    return res_df
+
+def evaluate_numerical_cashflow(data_array, index):
+    mean_values = list(map(lambda x: x.mean(), data_array))
+    std_values = list(map(lambda x: x.std(), data_array))
+    kurt_values = list(map(lambda x: x.kurtosis(), data_array))
+    skew_values = list(map(lambda x: x.skew(), data_array))
+    js_values = list(map(lambda x: jensenshannon(np.sort(abs(data_array[0])), np.sort(abs(x))), data_array))
     ks_values = list(map(lambda x: ks_2samp(data_array[0], x)[0], data_array))
     wd_values = list(map(lambda x: wasserstein_distance(data_array[0], x), data_array))
 
