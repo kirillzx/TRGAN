@@ -373,3 +373,125 @@ def compare_categorical_w_banksformer(data, synth_df, synth_df_cat, X_oh, metada
     data_cont_array=[data[contig_cols], synth_df[contig_cols], synth_ctgan[contig_cols], synth_copulagan[contig_cols], synth_banksformer[contig_cols]])
 
     return eval_cat
+
+
+def window_split(cl):
+    cl_mcc_cplit = []
+    for i in range(len(cl)-2):
+        cl_mcc_cplit.append(cl.iloc[i:i+3].values)
+    return cl_mcc_cplit
+
+def join_in_one_array(array):
+    res = []
+    for i in array:
+        for j in i:
+            res.append(j)
+
+    return res
+
+def calculate_3_grams(data):
+    split_data = data.groupby('customer')['mcc'].apply(lambda x: window_split(x))
+    split_data = split_data.values
+    split_data = join_in_one_array(split_data)
+
+    split_data_df = pd.DataFrame(np.array(split_data), columns=['1', '2', '3'])
+    split_data_df['ones'] = 1
+    split_counts = split_data_df.groupby(['1', '2', '3']).count().sort_values(by='ones', ascending=False).iloc[:25].values.flatten()
+
+    i_data = split_data_df.groupby(['1', '2', '3']).count().sort_values(by='ones', ascending=False).iloc[:25].index.values
+
+    return i_data, split_counts
+
+
+def calculate_3_grams_synth(data, idx_real):
+    split_data = data.groupby('customer')['mcc'].apply(lambda x: window_split(x))
+    split_data = split_data.values
+    split_data = join_in_one_array(split_data)
+
+    split_data_df = pd.DataFrame(np.array(split_data), columns=['1', '2', '3'])
+    split_data_df['ones'] = 1
+
+    idx_synth = split_data_df.groupby(['1', '2', '3']).count().sort_values(by='ones', ascending=False).iloc[:25].index
+    
+    split_counts = split_data_df.groupby(['1', '2', '3']).count().sort_values(by='ones', ascending=False).iloc[:25].loc[np.intersect1d(idx_synth,\
+         idx_real)].sort_values(by='ones', ascending=False).values.flatten()
+
+    i_data = split_data_df.groupby(['1', '2', '3']).count().sort_values(by='ones', ascending=False).iloc[:25].loc[np.intersect1d(idx_synth,\
+         idx_real)].sort_values(by='ones', ascending=False).index.values
+
+    return i_data, split_counts    
+
+def calculate_idx_3_grams(i_data, all_comb):
+    idx_real_pos = []
+
+    for j in i_data:
+        for i in range(len(all_comb)):
+            if j == all_comb[i]:
+                idx_real_pos.append(i)
+                break
+        else:
+            continue
+
+    return idx_real_pos
+
+
+def compare_categorical_w_banksformer_3grams(data, synth_df, synth_banks):
+
+    synth_banksformer = synth_banks
+
+
+    real_3grams_idx, real_3grams_count = calculate_3_grams(data.sort_values(by=['customer'])[['mcc', 'customer']])
+    trgan_3grams_idx, trgan_3grams_count = calculate_3_grams_synth(synth_df.sort_values(by=['customer'])[['mcc', 'customer']], real_3grams_idx)
+    banks_3grams_idx, banks_3grams_count = calculate_3_grams_synth(synth_banksformer.sort_values(by=['customer'])[['mcc', 'customer']], real_3grams_idx)
+
+    all_comb = real_3grams_idx
+
+    real_3grams_idx = calculate_idx_3_grams(real_3grams_idx, all_comb)
+    trgan_3grams_idx = calculate_idx_3_grams(trgan_3grams_idx, all_comb)
+    banks_3grams_idx = calculate_idx_3_grams(banks_3grams_idx, all_comb)
+
+    real_3grams_count = real_3grams_count/np.sum(real_3grams_count)
+    trgan_3grams_count = trgan_3grams_count/np.sum(trgan_3grams_count)
+    banks_3grams_count = banks_3grams_count/np.sum(banks_3grams_count)
+
+
+    fig, axs = plt.subplots(1, 2, figsize=(20, 5), dpi=100)
+
+    axs[0].bar(real_3grams_idx, real_3grams_count, color='black', alpha=0.6, label='Real')
+    axs[0].bar(trgan_3grams_idx, trgan_3grams_count, color='red', alpha=0.6, label='TRGAN')
+    
+    axs[0].tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+    axs[0].legend()
+    axs[0].set_xlabel('3-grams', fontsize=15)
+    axs[0].set_ylabel('Density', fontsize=15)
+    # axs[0].set_ylim((0, 0.17))
+#     axs[0, 0].set_title('TRGAN')
+    
+    axs[1].bar(real_3grams_idx, real_3grams_count, color='black', alpha=0.6, label='Real')
+    axs[1].bar(banks_3grams_idx, banks_3grams_count, color='green', alpha=0.6, label='Banksformer')
+
+    axs[1].tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+    axs[1].legend()
+    axs[1].set_xlabel('3-grams', fontsize=15)
+    axs[1].set_ylabel('Density', fontsize=15)
+    # axs[1].set_ylim((0, 0.17))
+#     axs[1, 1].set_title('Banksformer')
+
+    plt.subplots_adjust(hspace=0.15, wspace=0.16)
+    # plt.savefig('synth_3grams_czech.pdf', dpi=300)
+    plt.show()
+
+
+    z1 = list(zip(trgan_3grams_idx, trgan_3grams_count))
+    trgan_3grams_count2 = np.array(sorted(np.concatenate([z1, list(zip(np.setdiff1d(real_3grams_idx, trgan_3grams_idx),\
+                                                np.zeros(len(np.setdiff1d(real_3grams_idx, trgan_3grams_idx)))))]), key=lambda x: x[0])).T[1]
+    
+    z2 = list(zip(banks_3grams_idx, banks_3grams_count))
+    banks_3grams_count2 = np.array(sorted(np.concatenate([z2, list(zip(np.setdiff1d(real_3grams_idx, banks_3grams_idx),\
+                                                np.zeros(len(np.setdiff1d(real_3grams_idx, banks_3grams_idx)))))]), key=lambda x: x[0])).T[1]
+
+    display(pd.DataFrame(np.array([[jensenshannon(real_3grams_count, real_3grams_count), jensenshannon(real_3grams_count, trgan_3grams_count2),\
+                                    jensenshannon(real_3grams_count, banks_3grams_count2)],\
+                                   [wasserstein_distance(real_3grams_count, real_3grams_count), wasserstein_distance(real_3grams_count, trgan_3grams_count),\
+                                    wasserstein_distance(real_3grams_count, banks_3grams_count)]]).T,\
+                        columns=['D_JS', 'W_1'], index=['Real', 'TRGAN', 'Banksformer']))
