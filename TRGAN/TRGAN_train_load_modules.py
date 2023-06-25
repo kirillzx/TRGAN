@@ -70,7 +70,7 @@ def create_client_emb(dim_X_cl, data, client_info, dim_Xcl, lr_E_cl, epochs=20, 
 
 def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce, \
             name_client_id='customer', name_agg_feature='amount', lr_E_Vc=1e-3, epochs=15, batch_size=2**8, model_time='noise', n_splits=2, load=False,\
-            directory='Pretrained_model/', names=['TRGAN_E_Vc.pkl', 'Vc.npy', 'BCE.npy']):
+            directory='Pretrained_model/', names=['TRGAN_E_Vc.pkl', 'Vc.npy', 'BCE.npy'], opt_time=True, xi_array=[], q_array=[]):
     
     if load:
         encoder = Encoder(len(X_emb[0]), dim_Vc_h).to(device)
@@ -86,12 +86,12 @@ def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce
 
         behaviour_cl_enc = np.load(directory + names[2])
 
-        cond_vector, synth_time, date_transformations, deltas_by_clients, synth_deltas_by_clients = create_cond_vector_with_time_gen(X_emb_V_c, data, behaviour_cl_enc, date_feature, name_client_id, time,
-                        model_time, n_splits)
+        cond_vector, synth_time, date_transformations, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = create_cond_vector_with_time_gen(X_emb_V_c, data, behaviour_cl_enc, date_feature, name_client_id, time,
+                        model_time, n_splits, opt_time, xi_array, q_array)
 
     else:
-        cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients  = create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce, \
-                    name_client_id, name_agg_feature, lr_E_Vc, epochs, batch_size, model_time, n_splits)
+        cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce, \
+                    name_client_id, name_agg_feature, lr_E_Vc, epochs, batch_size, model_time, n_splits, opt_time, xi_array, q_array)
         
         torch.save(encoder.state_dict(), directory + names[0])
 
@@ -102,4 +102,4 @@ def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce
 
         encoder.eval()
 
-    return cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients 
+    return cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array 
