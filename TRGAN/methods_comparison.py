@@ -446,6 +446,8 @@ def compare_categorical_w_banksformer_3grams(data, synth_df, synth_banks):
 
     all_comb = real_3grams_idx
 
+    #  np.sort(np.unique(np.hstack([real_3grams_idx, trgan_3grams_idx, ctgan_3grams_idx, copulagan_3grams_idx, banks_3grams_idx])))
+    
     real_3grams_idx = calculate_idx_3_grams(real_3grams_idx, all_comb)
     trgan_3grams_idx = calculate_idx_3_grams(trgan_3grams_idx, all_comb)
     banks_3grams_idx = calculate_idx_3_grams(banks_3grams_idx, all_comb)
@@ -461,9 +463,10 @@ def compare_categorical_w_banksformer_3grams(data, synth_df, synth_banks):
     axs[0].bar(trgan_3grams_idx, trgan_3grams_count, color='red', alpha=0.6, label='TRGAN')
     
     axs[0].tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-    axs[0].legend()
-    axs[0].set_xlabel('3-grams', fontsize=15)
-    axs[0].set_ylabel('Density', fontsize=15)
+    axs[0].legend(fontsize=12)
+    axs[0].set_xlabel('3-grams', fontsize=16)
+    axs[0].set_ylabel('Density', fontsize=16)
+    axs[0].tick_params(labelsize=13)
     # axs[0].set_ylim((0, 0.17))
 #     axs[0, 0].set_title('TRGAN')
     
@@ -471,9 +474,10 @@ def compare_categorical_w_banksformer_3grams(data, synth_df, synth_banks):
     axs[1].bar(banks_3grams_idx, banks_3grams_count, color='green', alpha=0.6, label='Banksformer')
 
     axs[1].tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-    axs[1].legend()
-    axs[1].set_xlabel('3-grams', fontsize=15)
-    axs[1].set_ylabel('Density', fontsize=15)
+    axs[1].legend(fontsize=12)
+    axs[1].set_xlabel('3-grams', fontsize=16)
+    axs[1].set_ylabel('Density', fontsize=16)
+    axs[1].tick_params(labelsize=13)
     # axs[1].set_ylim((0, 0.17))
 #     axs[1, 1].set_title('Banksformer')
 
@@ -495,3 +499,4 @@ def compare_categorical_w_banksformer_3grams(data, synth_df, synth_banks):
                                    [wasserstein_distance(real_3grams_count, real_3grams_count), wasserstein_distance(real_3grams_count, trgan_3grams_count),\
                                     wasserstein_distance(real_3grams_count, banks_3grams_count)]]).T,\
                         columns=['D_JS', 'W_1'], index=['Real', 'TRGAN', 'Banksformer']))
+
