@@ -14,7 +14,7 @@ from scipy.optimize import minimize
 from scipy.stats import wasserstein_distance, entropy
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
-from rdt.transformers.numerical import ClusterBasedNormalizer
+from rdt.transformers.numerical import ClusterBasedNormalizer, GaussianNormalizer
 from rdt.transformers.categorical import FrequencyEncoder
 # import scipy.stats as sts
 from scipy import signal
@@ -85,7 +85,8 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
 CONTINUOUS FEATURES
 '''
 
-def preprocessing_cont(X: pd.DataFrame, cont_features, type_scale='CBNormalize', max_clusters=10, weight_threshold=0.005):
+def preprocessing_cont(X: pd.DataFrame, cont_features, type_scale='Standardize', max_clusters=10,\
+                    weight_threshold=0.005, epochs=20, lr=0.001, bs=2**8, dim_cont_emb=3):
     data = copy.deepcopy(X)
 
     if type_scale == 'CBNormalize':
@@ -111,10 +112,56 @@ def preprocessing_cont(X: pd.DataFrame, cont_features, type_scale='CBNormalize',
         scaler = StandardScaler()
         data[cont_features] = scaler.fit_transform(data[cont_features].values)
 
+    elif type_scale == 'Autoencoder':
+        scaler = []
+        
+        scaler_cont = GaussianNormalizer(enforce_min_max_values=True, learn_rounding_scheme=True)
+        data[cont_features] = scaler_cont.fit_transform(data[cont_features], column=cont_features)
+
+        scaler_cont2 = MinMaxScaler((-1, 1))
+        data[cont_features] = scaler_cont2.fit_transform(data[cont_features])
+
+        encoder_cont_emb = Encoder_cont_emb(len(cont_features), dim_cont_emb).to(device)
+        decoder_cont_emb = Decoder_cont_emb(dim_cont_emb, len(cont_features)).to(device)
+
+        optimizer_Enc_cont_emb = optim.Adam(encoder_cont_emb.parameters(), lr)
+        optimizer_Dec_cont_emb = optim.Adam(decoder_cont_emb.parameters(), lr)
+
+        loader_cont_emb = DataLoader(torch.FloatTensor(data[cont_features].values), bs, shuffle=True)
+
+        epochs = tqdm(range(epochs))
+
+        for epoch in epochs:
+            for batch_idx, X in enumerate(loader_cont_emb):
+                loss = torch.nn.MSELoss()
+
+                H = encoder_cont_emb(X.float().to(device))
+                X_tilde = decoder_cont_emb(H.to(device))
+                
+                loss_mse = loss(X.float().to(device), X_tilde).to(device)
+                criterion = loss_mse
+                
+                optimizer_Enc_cont_emb.zero_grad()
+                optimizer_Dec_cont_emb.zero_grad()
+                
+                criterion.backward()
+                
+                optimizer_Enc_cont_emb.step()
+                optimizer_Dec_cont_emb.step()
+
+            epochs.set_description(f'Loss E_cont: {loss_mse.item()}, Loss E_cont_DP: {criterion.item()}')
+
+        X_cont = encoder_cont_emb(torch.FloatTensor(data[cont_features].values).to(device)).detach().cpu().numpy()
+
+        scaler.append(decoder_cont_emb)
+        scaler.append(scaler_cont2)
+        scaler.append(scaler_cont)
+
     else:
         print('Choose preprocessing scheme for continuous features. Available: CBNormalize and Standardize')
 
-    return data[cont_features].values, scaler
+    # return data[cont_features].values, scaler
+    return X_cont, scaler
 
 
 '''
@@ -227,10 +274,11 @@ def behaviour_encoding(data, dim, name_client_id='customer',  name_agg_feature='
     return np.log1p(quantiles_array)
 
 def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_client_id, name_agg_feature, lr=1e-3, epochs=20, batch_size = 2**8,
-                       model_time='poisson', n_splits=2):
+                       model_time='poisson', n_splits=2, opt_time=True, xi_array=[], q_array=[]):
 
     if time == 'synth':
-        data_synth_time, deltas_by_clients, synth_deltas_by_clients = generate_synth_time(data, name_client_id, date_feature[0], model_time, n_splits)
+        data_synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = generate_synth_time(data, name_client_id, date_feature[0], model_time, n_splits,\
+                                                                                          opt_time, xi_array, q_array)
         date_transformations = preprocessing_date(data_synth_time, date_feature[0])
 
     elif time == 'initial':
@@ -238,6 +286,8 @@ def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_cl
         date_transformations = preprocessing_date(data, date_feature[0])
         deltas_by_clients = 'Only when time="synth"'
         synth_deltas_by_clients = 'Only when time="synth"'
+        xiP_array = []
+        idx_array = []
 
     else:
         print('Choose time generation type')
@@ -296,7 +346,7 @@ def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_cl
     # cond_vector = np.concatenate([data_encode, date_transformations, behaviour_cl_enc], axis=1)
     cond_vector = np.concatenate([data_encode, date_transformations], axis=1)
 
-    return cond_vector, data_synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients
+    return cond_vector, data_synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array 
 
 
 
@@ -700,6 +750,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             
             # disc_loss = -torch.mean(discriminator(X[:,:-pos_dim])) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))+\
             disc_loss = (-torch.mean(discriminator(X[:,:])) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
+            disc_loss = disc_loss + np.random.normal(0, 0.1)
             # grad_penalty(discriminator, X[:,:].detach(), torch.cat([fake, Vc], dim=1)).to(device)
             # disc_loss = disc_loss + np.random.normal(0, std)
 
@@ -707,7 +758,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) 
             # grad_penalty(discriminator2, X[:,:].detach(), torch.cat([fake_super, Vc], dim=1)).to(device)
             # disc_loss = torch.mean(torch.log(discriminator(X.detach())) + torch.log(1 - discriminator(torch.cat([fake, X[:, -(hidden_dim+date_transf_dim):]], dim=1))))
-            # disc2_loss = disc2_loss + np.random.normal(0, std)
+            disc2_loss = disc2_loss + np.random.normal(0, 0.1)
 
             for dp in discriminator.parameters():
                         dp.data.clamp_(-b_d1, b_d1)
@@ -765,7 +816,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
     return generator, supervisor, loss_array, discriminator, discriminator2
 
 def sample_cond_vector_with_time(n_samples, len_cond_vector, X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time='synth',
-                        model_time='poisson', n_splits=2):
+                        model_time='poisson', n_splits=2, opt_time=True, xi_array=[], q_array=[]):
     cond_vector_array = []
     synth_time_array = []
     residual = n_samples%len_cond_vector
@@ -773,15 +824,15 @@ def sample_cond_vector_with_time(n_samples, len_cond_vector, X_emb, data, behavi
     if n_samples > len_cond_vector:
 
         for i in range(n_samples//len_cond_vector):
-            cond_vector, synth_time, _, _, _  = create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time,
-                            model_time, n_splits)
+            cond_vector, synth_time, _, _, _, _, _ = create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time,
+                            model_time, n_splits, opt_time, xi_array, q_array)
             cond_vector_array.append(cond_vector)
             synth_time_array.append(synth_time)
 
         if residual != 0:
-            cond_vector, synth_time, _  = create_cond_vector_with_time_gen(X_emb[:residual], data[:residual],\
+            cond_vector, synth_time, _, _, _, _, _ = create_cond_vector_with_time_gen(X_emb[:residual], data[:residual],\
                             behaviour_cl_enc[:residual], date_feature, name_client_id, time,\
-                            model_time, n_splits)
+                            model_time, n_splits, opt_time, xi_array, q_array)
             cond_vector_array.append(cond_vector)
             synth_time_array.append(synth_time)
 
@@ -789,19 +840,19 @@ def sample_cond_vector_with_time(n_samples, len_cond_vector, X_emb, data, behavi
         cond_vector = np.vstack(cond_vector_array)
 
     else:
-        cond_vector, synth_time, _, _, _  = create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time,
-                            model_time, n_splits)
+        cond_vector, synth_time, _, _, _, _, _ = create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time,
+                            model_time, n_splits, opt_time, xi_array, q_array)
 
     
     return synth_time, cond_vector
 
 def sample(n_samples, generator, supervisor, noise_dim, cond_vector, X_emb, encoder, data, behaviour_cl_enc,\
-            date_feature, name_client_id, time='initial', model_time='poisson', n_splits=2):
+            date_feature, name_client_id, time='initial', model_time='poisson', n_splits=2, opt_time=True, xi_array=[], q_array=[]):
     if n_samples <= len(cond_vector):
         # noise = torch.randn(n_samples, noise_dim)
         X_emb_cv = encoder(torch.FloatTensor(X_emb).to(device)).detach().cpu().numpy()
         synth_time, cond_vector = sample_cond_vector_with_time(n_samples, len(cond_vector), X_emb_cv, data, behaviour_cl_enc, date_feature, name_client_id, time,
-                        model_time, n_splits)
+                        model_time, n_splits, opt_time, xi_array, q_array)
         
         noise = torch.FloatTensor(dclProcess(n_samples - 1, noise_dim)).to(device)
         z = torch.cat([noise.to(device), torch.FloatTensor(cond_vector[:n_samples]).to(device)], axis=1).to(device)
@@ -812,7 +863,7 @@ def sample(n_samples, generator, supervisor, noise_dim, cond_vector, X_emb, enco
     else:
         X_emb = encoder(torch.FloatTensor(X_emb).to(device)).detach().cpu().numpy()
         synth_time, cond_vector = sample_cond_vector_with_time(n_samples, len(cond_vector), X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time,
-                        model_time, n_splits)
+                        model_time, n_splits, opt_time, xi_array, q_array)
         
         # noise = torch.randn(n_samples, noise_dim)
         noise = torch.FloatTensor(dclProcess(n_samples - 1, noise_dim)).to(device)
@@ -825,10 +876,11 @@ def sample(n_samples, generator, supervisor, noise_dim, cond_vector, X_emb, enco
 
 
 def create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature, name_client_id, time='initial',
-                        model_time='poisson', n_splits=2):
+                        model_time='poisson', n_splits=3, opt_time=True, xi_array=[], q_array=[]):
 
     if time == 'synth':
-        data_synth_time, deltas_by_clients, synth_deltas_by_clients = generate_synth_time(data, name_client_id, date_feature[0], model_time, n_splits)
+        data_synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = generate_synth_time(data, name_client_id, date_feature[0], model_time, n_splits,\
+                                                                                        opt_time, xi_array, q_array)
         date_transformations = preprocessing_date(data_synth_time, date_feature[0])
 
     elif time == 'initial':
@@ -836,6 +888,8 @@ def create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature
         date_transformations = preprocessing_date(data, date_feature[0])
         deltas_by_clients = data.groupby(name_client_id)[date_feature[0]].apply(lambda x: (x - x.shift()).dt.days.values[1:])
         synth_deltas_by_clients = deltas_by_clients
+        xiP_array = []
+        idx_array = []
 
     else:
         print('Choose time generation type')
@@ -843,7 +897,7 @@ def create_cond_vector_with_time_gen(X_emb, data, behaviour_cl_enc, date_feature
     # cond_vector = np.concatenate([X_emb, date_transformations, behaviour_cl_enc], axis=1)
     cond_vector = np.concatenate([X_emb, date_transformations], axis=1)
 
-    return cond_vector, data_synth_time, date_transformations, deltas_by_clients, synth_deltas_by_clients
+    return cond_vector, data_synth_time, date_transformations, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array
 
 
 def undummify(df, prefix_sep="_"):
@@ -920,6 +974,12 @@ def inverse_transforms(n_samples, synth_data, synth_time, client_info, cont_feat
         synth_cont_feat = synth_data_scaled[:,:dim_X_cont]
         synth_cont_feat = scaler_cont.inverse_transform(synth_cont_feat)
 
+    elif type_scale_cont == 'Autoencoder':
+        synth_cont_feat = synth_data_scaled[:,:dim_X_cont]
+        synth_cont_feat = (scaler_cont[0](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
+        synth_cont_feat = scaler_cont[1].inverse_transform(synth_cont_feat)
+        synth_cont_feat = scaler_cont[2].reverse_transform(pd.DataFrame(synth_cont_feat, columns=cont_features))
+
     else:
         print('Incorrect preprocessing type for continuous features')
 
@@ -941,6 +1001,10 @@ def inverse_transforms(n_samples, synth_data, synth_time, client_info, cont_feat
     
     return synth_df, synth_df_cat
 
+
+'''
+SYNTHETIC TIME GENERATION
+'''
 
 def optimize_xi(xiP, delta, k, n):
     return mean_squared_error(np.mean(np.random.poisson(xiP, size=(k, n)), axis=0), delta)
@@ -990,10 +1054,15 @@ def optimize_xi_by_deltas_split(deltas, n_splits):
 
     return xiP_array, idx_array
 
-def generate_synth_deltas_poisson_split(deltas, n_splits):    
+def generate_synth_deltas_poisson_split(deltas, n_splits, opt_time, xi_array, q_array):    
     synth_deltas = []
 
-    xiP_array, idx_array = optimize_xi_by_deltas_split(deltas, n_splits)
+    if opt_time:
+        xiP_array, idx_array = optimize_xi_by_deltas_split(deltas, n_splits)
+    else:
+        xiP_array = xi_array
+        idx_array = q_array
+
     deltas = deltas.values
     
     for i in range(len(deltas)):
@@ -1010,9 +1079,9 @@ def generate_synth_deltas_poisson_split(deltas, n_splits):
 
     synth_deltas_by_clients = synth_deltas
 
-    return np.hstack(synth_deltas).astype(int), synth_deltas_by_clients
+    return np.hstack(synth_deltas).astype(int), synth_deltas_by_clients, xiP_array, idx_array
 
-def generate_synth_time(data, client_id, time_id, model='normal', n_splits=2):
+def generate_synth_time(data, client_id, time_id, model='normal', n_splits=2, opt_time=True, xi_array=[], q_array=[]):
     
     deltas_by_clients = data.groupby(client_id)[time_id].apply(lambda x: (x - x.shift()).dt.days.values[1:])
     first_dates_by_clients = data.groupby(client_id)[time_id].first().values
@@ -1021,11 +1090,13 @@ def generate_synth_time(data, client_id, time_id, model='normal', n_splits=2):
     deltas = np.hstack(deltas_by_clients)
 
     if model == 'poisson':
-        synth_deltas, synth_deltas_by_clients = generate_synth_deltas_poisson_split(deltas_by_clients, n_splits)
+        synth_deltas, synth_deltas_by_clients, xiP_array, idx_array = generate_synth_deltas_poisson_split(deltas_by_clients, n_splits, opt_time, xi_array, q_array)
 
     elif model == 'normal':
         synth_deltas = abs(deltas + np.around(np.random.normal(0, 0.5, len(deltas))).astype(int))
         synth_deltas_by_clients = synth_deltas
+        xiP_array = []
+        idx_array = []
     
     else:
         print('Choose the model for synthetic time generation')
@@ -1039,7 +1110,7 @@ def generate_synth_time(data, client_id, time_id, model='normal', n_splits=2):
     
     synth_time = pd.DataFrame(np.hstack(np.array(synth_dates_by_clients)), columns=[time_id]).sort_values(by=time_id).reset_index(drop=True)
 
-    return synth_time, deltas_by_clients, synth_deltas_by_clients
+    return synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array
 
 # def optimize_xi_by_deltas(deltas):
 #     xiP_array = []

@@ -174,3 +174,52 @@ class Decoder(nn.Module):
     def forward(self, x):
         out = self.model(x)
         return out
+    
+
+class Encoder_cont_emb(nn.Module):
+    def __init__(self, data_dim, hidden_dim):
+        super(Encoder_cont_emb, self).__init__()
+        
+        self.hidden_dim = hidden_dim #the size of latent space
+        self.data_dim = data_dim
+                
+        self.model = nn.Sequential(
+            nn.Linear(self.data_dim, 2**6),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**6, 2**8),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**8, 2**8),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**8, 2**6),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**6, self.hidden_dim),
+            nn.Tanh()
+        )
+        
+    def forward(self, x):
+        out = self.model(x)
+        return out
+        
+class Decoder_cont_emb(nn.Module):
+    def __init__(self, hidden_dim, data_dim):
+        super(Decoder_cont_emb, self).__init__()
+    
+        self.hidden_dim = hidden_dim #the size of latent space
+        self.data_dim = data_dim
+        
+        self.model = nn.Sequential(
+            nn.Linear(self.hidden_dim, 2**6),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**6, 2**8),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**8, 2**8),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**8, 2**6),
+            nn.LeakyReLU(0.1),
+            nn.Linear(2**6, self.data_dim),
+            nn.Tanh()
+        )
+        
+    def forward(self, x):
+        out = self.model(x)
+        return out
