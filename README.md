@@ -4,20 +4,23 @@
 The official realisation of the prposed method TRGAN (link on the article will be available later)
 There are some bugs. It will be fixed later.
 
+## Method
+
 <p align="center">
-<img src="https://github.com/kirillzx/TRGAN/blob/main/images/general.png"  width="60%" height="30%">
+<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/general.png"  width="60%" height="30%">
 </p>
 
 <p align="center">
-<img src="https://github.com/kirillzx/TRGAN/blob/main/images/preprocessing.png"  width="60%" height="30%">
-</p>
-
-
-<p align="center">
-<img src="https://github.com/kirillzx/TRGAN/blob/main/images/cv.png"  width="60%" height="30%">
+<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/preprocessing.png"  width="60%" height="30%">
 </p>
 
 
 <p align="center">
-<img src="https://github.com/kirillzx/TRGAN/blob/main/images/amount.png"  width="60%" height="30%">
+<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/cv.png"  width="60%" height="30%">
+</p>
+
+## Results
+
+<p align="center">
+<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/amount.png"  width="60%" height="30%">
 </p>
