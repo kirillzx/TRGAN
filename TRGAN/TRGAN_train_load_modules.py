@@ -103,3 +103,35 @@ def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce
         encoder.eval()
 
     return cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array 
+
+
+def create_cont_emb(dim_X_cont, data, cont_features, lr_E_cont=1e-3, epochs=20, batch_size=2**8,\
+            load=False, directory='Pretrained_model/', names='scaler_cont', type_scale='Autoencoder'):
+    
+    if load:
+        scaler_cont = list(np.load(directory + names, allow_pickle=True))
+
+        encoder_cont_emb = Encoder_cont_emb(len(cont_features), dim_X_cont).to(device)
+
+        encoder_cont_emb.load_state_dict(scaler_cont[-1].state_dict())
+        encoder_cont_emb.eval()
+
+        scaler_cont[2].reset_randomization()
+        X_cont = scaler_cont[2].transform(data[cont_features])
+        X_cont = scaler_cont[1].transform(X_cont)
+  
+        X_cont = encoder_cont_emb(torch.FloatTensor(X_cont).to(device)).detach().cpu().numpy()
+
+    else:
+        X_cont, scaler_cont = preprocessing_cont(data, cont_features, type_scale=type_scale, lr=lr_E_cont, bs=batch_size, epochs=epochs, dim_cont_emb=dim_X_cont)
+        
+        # torch.save(scaler_cont[-1].state_dict(), directory + names[0])
+        # torch.save(scaler_cont[0].state_dict(), directory + names[1])
+
+        # # np.save(directory + names[2], X_cl)
+        # joblib.dump(scaler_cont[1], directory + names[3])
+        # joblib.dump(scaler_cont[2], directory + names[4])
+
+        np.save(directory + names, scaler_cont)
+
+    return X_cont, scaler_cont

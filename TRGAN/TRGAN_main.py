@@ -85,7 +85,7 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
 CONTINUOUS FEATURES
 '''
 
-def preprocessing_cont(X: pd.DataFrame, cont_features, type_scale='Standardize', max_clusters=10,\
+def preprocessing_cont(X, cont_features, type_scale='Standardize', max_clusters=10,\
                     weight_threshold=0.005, epochs=20, lr=0.001, bs=2**8, dim_cont_emb=3):
     data = copy.deepcopy(X)
 
@@ -116,6 +116,7 @@ def preprocessing_cont(X: pd.DataFrame, cont_features, type_scale='Standardize',
         scaler = []
         
         scaler_cont = GaussianNormalizer(enforce_min_max_values=True, learn_rounding_scheme=True)
+        scaler_cont.reset_randomization()
         data[cont_features] = scaler_cont.fit_transform(data[cont_features], column=cont_features)
 
         scaler_cont2 = MinMaxScaler((-1, 1))
@@ -149,13 +150,17 @@ def preprocessing_cont(X: pd.DataFrame, cont_features, type_scale='Standardize',
                 optimizer_Enc_cont_emb.step()
                 optimizer_Dec_cont_emb.step()
 
-            epochs.set_description(f'Loss E_cont: {loss_mse.item()}, Loss E_cont_DP: {criterion.item()}')
+            epochs.set_description(f'Loss E_cont: {loss_mse.item()}')
+
+        encoder_cont_emb.eval()
+        decoder_cont_emb.eval()
 
         X_cont = encoder_cont_emb(torch.FloatTensor(data[cont_features].values).to(device)).detach().cpu().numpy()
 
         scaler.append(decoder_cont_emb)
         scaler.append(scaler_cont2)
         scaler.append(scaler_cont)
+        scaler.append(encoder_cont_emb)
 
     else:
         print('Choose preprocessing scheme for continuous features. Available: CBNormalize and Standardize')
@@ -394,7 +399,7 @@ class Generator(nn.Module):
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             nn.Linear(self.h_dim, self.h_dim)
         ) for _ in range(self.num_blocks)]
         )
@@ -451,12 +456,12 @@ class Generator(nn.Module):
             out += res
             out = self.layernorm_layers_1[i](out)
 
-            #feed forward
-            res = out
-            out = self.feed_forward_generator_layers[i](out)
-            #add & norm
-            out += res
-            out = self.layernorm_layers_2[i](out)
+            # #feed forward
+            # res = out
+            # out = self.feed_forward_generator_layers[i](out)
+            # #add & norm
+            # out += res
+            # out = self.layernorm_layers_2[i](out)
 
         out = self.fc2(out)
         return self.tanh(out)
@@ -554,12 +559,12 @@ class Supervisor(nn.Module):
             out += res
             out = self.layernorm_layers_1[i](out)
 
-            #feed forward
-            res = out
-            out = self.feed_forward_generator_layers[i](out)
-            #add & norm
-            out += res
-            out = self.layernorm_layers_2[i](out)
+            # #feed forward
+            # res = out
+            # out = self.feed_forward_generator_layers[i](out)
+            # #add & norm
+            # out += res
+            # out = self.layernorm_layers_2[i](out)
 
         out = self.fc2(out)
         return self.tanh(out)
@@ -600,7 +605,7 @@ class Discriminator(nn.Module):
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             nn.Linear(self.h_dim, self.h_dim)
         ) for _ in range(self.num_blocks)]
         )
@@ -615,6 +620,7 @@ class Discriminator(nn.Module):
         self.filter3 = signal.windows.gaussian(gauss_filter_dim, 3)
 
         self.fc2 = nn.Linear(self.h_dim, 1)
+        self.sigmoid = nn.Sigmoid()
 
         # self.init_weights()
         # self.feed_forward_discriminator.apply(init_weight_seq)
@@ -651,13 +657,13 @@ class Discriminator(nn.Module):
             out += res
             out = self.layernorm_layers_1[i](out)
 
-            #feed forward
-            res = out
-            out = self.feed_forward_discriminator_layers[i](out)
+            # #feed forward
+            # res = out
+            # out = self.feed_forward_discriminator_layers[i](out)
             
-            #add & norm
-            out += res
-            out = self.layernorm_layers_2[i](out)
+            # #add & norm
+            # out += res
+            # out = self.layernorm_layers_2[i](out)
   
         out = self.fc2(out)
         return out
@@ -748,17 +754,15 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             X = X.to(device)
             
             
-            # disc_loss = -torch.mean(discriminator(X[:,:-pos_dim])) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))+\
-            disc_loss = (-torch.mean(discriminator(X[:,:])) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
-            disc_loss = disc_loss + np.random.normal(0, 0.1)
-            # grad_penalty(discriminator, X[:,:].detach(), torch.cat([fake, Vc], dim=1)).to(device)
-            # disc_loss = disc_loss + np.random.normal(0, std)
+            disc_loss = (-torch.mean(discriminator(X)) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
+            # disc_loss = disc_loss + np.random.normal(0, 0.1)
+            # disc_loss = torch.mean(torch.log(discriminator(X)) + torch.log(1 - discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
 
             fake_super = supervisor(torch.cat([fake, Vc], dim=1)).to(device)
             disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) 
             # grad_penalty(discriminator2, X[:,:].detach(), torch.cat([fake_super, Vc], dim=1)).to(device)
-            # disc_loss = torch.mean(torch.log(discriminator(X.detach())) + torch.log(1 - discriminator(torch.cat([fake, X[:, -(hidden_dim+date_transf_dim):]], dim=1))))
-            disc2_loss = disc2_loss + np.random.normal(0, 0.1)
+            # disc2_loss = torch.mean(torch.log(discriminator2(X)) + torch.log(1 - discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device)
+            # disc2_loss = disc2_loss + np.random.normal(0, 0.1)
 
             for dp in discriminator.parameters():
                         dp.data.clamp_(-b_d1, b_d1)
@@ -775,29 +779,28 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             disc2_loss.backward()
             optimizer_D2.step()
                     
-            if batch_idx % 5 == 0:
+            if batch_idx % 3 == 0:
                 gen_loss1 = -torch.mean(discriminator(torch.cat([generator(z), Vc], dim=1))).to(device)
-                supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1)))).to(device)
-                                #    + 3*loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
-
-                # gen_loss1 = -torch.mean(discriminator(torch.cat([fake, X[:, -(hidden_dim+date_transf_dim):]], dim=1)))
-                # supervisor_loss = -torch.mean(discriminator2(torch.cat([fake_super, X[:, -(hidden_dim+date_transf_dim):]], dim=1)))
-
+                supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1))) +\
+                                    lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+                
+                # gen_loss1 = torch.mean(torch.log(discriminator(torch.cat([generator(z), Vc], dim=1)))).to(device)
+                # supervisor_loss = (torch.mean(torch.log(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1)))) +\
+                #                     lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+                
                 gen_loss = (alpha * gen_loss1 + (1 - alpha) * supervisor_loss)
                 
-            #     gen_loss = torch.mean(torch.log(discriminator(torch.cat([generator(z), X[:, -(hidden_dim+date_transf_dim):]], dim=1))))
+            
                 optimizer_G.zero_grad()
                 gen_loss.backward()
                 optimizer_G.step()
                 
                 supervisor_loss2 = ((-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
                     Vc], dim=1)))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+                
+                # supervisor_loss2 = ((torch.mean(torch.log(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
+                #     Vc], dim=1))))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
                 # loss_dist(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc]).to(device)
-                 
-                # supervisor_loss2 = loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-(hidden_dim+date_transf_dim+pos_dim)])
-                # supervisor_loss2 = -torch.mean(discriminator2(torch.cat([fake_super, X[:, -(hidden_dim+date_transf_dim):]], dim=1))) +\
-                    #  loss(fake_super, X[:,:-(hidden_dim+date_transf_dim)])
-
                 
                 optimizer_S.zero_grad()
                 supervisor_loss2.backward()
@@ -978,6 +981,7 @@ def inverse_transforms(n_samples, synth_data, synth_time, client_info, cont_feat
         synth_cont_feat = synth_data_scaled[:,:dim_X_cont]
         synth_cont_feat = (scaler_cont[0](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
         synth_cont_feat = scaler_cont[1].inverse_transform(synth_cont_feat)
+        scaler_cont[2].reset_randomization()
         synth_cont_feat = scaler_cont[2].reverse_transform(pd.DataFrame(synth_cont_feat, columns=cont_features))
 
     else:
