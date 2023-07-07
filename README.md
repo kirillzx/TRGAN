@@ -19,6 +19,15 @@ There are some bugs. It will be fixed later.
 <img src="https://github.com/kirillzx/TRGAN/blob/main/Images/cv.png"  width="60%" height="30%">
 </p>
 
+## Hyperparameters
+
+
+<p align="center">
+<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/hyper.png"  width="60%" height="30%">
+</p>
+
+
+
 ## Results
 
 <p align="center">
