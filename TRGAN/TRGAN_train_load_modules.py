@@ -5,10 +5,8 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 from TRGAN.encoders import *
 from TRGAN.TRGAN_main import *
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=False,\
-                   directory='Pretrained_model/', names=['TRGAN_E_oh.pkl', 'TRGAN_D_oh.pkl', 'X_oh_emb.npy']):
+                   directory='Pretrained_model/', names=['TRGAN_E_oh.pkl', 'TRGAN_D_oh.pkl', 'X_oh_emb.npy'], device='cpu'):
     if load:
         encoder_onehot = Encoder_onehot(len(X_oh.columns), dim_Xoh).to(device)
         decoder_onehot = Decoder_onehot(dim_Xoh, len(X_oh.columns)).to(device)
@@ -23,7 +21,7 @@ def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=Fals
         # X_oh_emb = encoder_onehot(torch.FloatTensor(X_oh).to(device)).detach().cpu().numpy()
 
     else:
-        X_oh_emb, encoder_onehot, decoder_onehot = create_categorical_embeddings(X_oh, dim_Xoh, lr_E_oh, epochs, batch_size)
+        X_oh_emb, encoder_onehot, decoder_onehot = create_categorical_embeddings(X_oh, dim_Xoh, lr_E_oh, epochs, batch_size, device)
         
         torch.save(encoder_onehot.state_dict(), directory + names[0])
         torch.save(decoder_onehot.state_dict(), directory + names[1])
@@ -36,7 +34,7 @@ def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=Fals
     return X_oh_emb, encoder_onehot, decoder_onehot
 
 def create_client_emb(dim_X_cl, data, client_info, dim_Xcl, lr_E_cl, epochs=20, batch_size=2**8,\
-            load=False, directory='Pretrained_model/', names=['TRGAN_E_cl.pkl', 'TRGAN_D_cl.pkl', 'X_cl.npy', 'scaler.joblib', 'label_enc.joblib']):
+            load=False, directory='Pretrained_model/', names=['TRGAN_E_cl.pkl', 'TRGAN_D_cl.pkl', 'X_cl.npy', 'scaler.joblib', 'label_enc.joblib'], device='cpu'):
     
     if load:
         encoder_cl_emb = Encoder_client_emb(len(client_info), dim_X_cl).to(device)
@@ -54,7 +52,8 @@ def create_client_emb(dim_X_cl, data, client_info, dim_Xcl, lr_E_cl, epochs=20, 
         label_encoders = joblib.load(directory + names[4])
 
     else:
-        X_cl, encoder_cl_emb, decoder_cl_emb, scaler_cl_emb, label_encoders = create_client_embeddings(data, client_info, dim_Xcl, lr_E_cl, epochs, batch_size)
+        X_cl, encoder_cl_emb, decoder_cl_emb, scaler_cl_emb, label_encoders = create_client_embeddings(data,\
+                                                            client_info, dim_Xcl, lr_E_cl, epochs, batch_size, device)
         
         torch.save(encoder_cl_emb.state_dict(), directory + names[0])
         torch.save(decoder_cl_emb.state_dict(), directory + names[1])
@@ -70,7 +69,7 @@ def create_client_emb(dim_X_cl, data, client_info, dim_Xcl, lr_E_cl, epochs=20, 
 
 def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce, \
             name_client_id='customer', name_agg_feature='amount', lr_E_Vc=1e-3, epochs=15, batch_size=2**8, model_time='noise', n_splits=2, load=False,\
-            directory='Pretrained_model/', names=['TRGAN_E_Vc.pkl', 'Vc.npy', 'BCE.npy'], opt_time=True, xi_array=[], q_array=[]):
+            directory='Pretrained_model/', names=['TRGAN_E_Vc.pkl', 'Vc.npy', 'BCE.npy'], opt_time=True, xi_array=[], q_array=[], device='cpu'):
     
     if load:
         encoder = Encoder(len(X_emb[0]), dim_Vc_h).to(device)
@@ -90,8 +89,10 @@ def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce
                         model_time, n_splits, opt_time, xi_array, q_array)
 
     else:
-        cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce, \
-                    name_client_id, name_agg_feature, lr_E_Vc, epochs, batch_size, model_time, n_splits, opt_time, xi_array, q_array)
+        cond_vector, synth_time, date_transformations, behaviour_cl_enc, encoder, deltas_by_clients,\
+        synth_deltas_by_clients, xiP_array, idx_array =\
+              create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce, name_client_id, name_agg_feature,\
+                                lr_E_Vc, epochs, batch_size, model_time, n_splits, opt_time, xi_array, q_array, device)
         
         torch.save(encoder.state_dict(), directory + names[0])
 
@@ -106,7 +107,7 @@ def create_conditional_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_bce
 
 
 def create_cont_emb(dim_X_cont, data, cont_features, lr_E_cont=1e-3, epochs=20, batch_size=2**8,\
-            load=False, directory='Pretrained_model/', names='scaler_cont', type_scale='Autoencoder'):
+            load=False, directory='Pretrained_model/', names='scaler_cont', type_scale='Autoencoder', device='cpu'):
     
     if load:
         scaler_cont = list(np.load(directory + names, allow_pickle=True))
@@ -123,7 +124,8 @@ def create_cont_emb(dim_X_cont, data, cont_features, lr_E_cont=1e-3, epochs=20, 
         X_cont = encoder_cont_emb(torch.FloatTensor(X_cont).to(device)).detach().cpu().numpy()
 
     else:
-        X_cont, scaler_cont = preprocessing_cont(data, cont_features, type_scale=type_scale, lr=lr_E_cont, bs=batch_size, epochs=epochs, dim_cont_emb=dim_X_cont)
+        X_cont, scaler_cont = preprocessing_cont(data, cont_features, type_scale=type_scale, lr=lr_E_cont,\
+                                                bs=batch_size, epochs=epochs, dim_cont_emb=dim_X_cont, device=device)
         
         # torch.save(scaler_cont[-1].state_dict(), directory + names[0])
         # torch.save(scaler_cont[0].state_dict(), directory + names[1])
