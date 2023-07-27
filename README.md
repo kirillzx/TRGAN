@@ -6,7 +6,7 @@ The official realisation of the prposed method TRGAN (link on the article will b
 We have proposed a new approach for synthetic bank transaction generation with time factor. For that we developed the mechanism for synthetic time generation based on Poisson processes, preprocessing scheme for all kinds of attributes in transactional data and the new GAN architecture with generator, supervisor and two discriminators with conditional vector depending on time.
 
 ## Data
-All data and pretrained models which were used in the article experiments can be found by the link on google drive (will be availabe later).
+All data and pretrained models which were used in the article experiments can be found by the link on google drive https://drive.google.com/drive/folders/1mw3uUlw2yGz6N6BiaPe-5G-Iv-4s-6EO?usp=sharing.
 
 ## Method
 The general pipeline includes the following architecture: generator, supervisor and two discriminators. As Input we use a bounded stochastic process from the DCL family instead of standard Gaussian Noise for time dependencies and smoothenes of transitions between transactions. For a more detailed description see the article the section Generative Method.
