@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def init_weight_seq(layer):
+    if type(layer) == nn.Linear:
+        torch.nn.init.uniform(layer.weight, -1, 1)
 
 class Encoder_onehot(nn.Module):
     def __init__(self, data_dim, hidden_dim):
@@ -11,18 +13,6 @@ class Encoder_onehot(nn.Module):
         self.hidden_dim = hidden_dim #the size of latent space
         self.data_dim = data_dim
                 
-        # self.model = nn.Sequential(
-        #     nn.Linear(self.data_dim, 2**6),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**6, 2**8),
-        #     nn.LeakyReLU(0.01),
-        #     nn.Linear(2**8, 2**8),
-        #     nn.LeakyReLU(0.01),
-        #     nn.Linear(2**8, 2**6),
-        #     nn.LeakyReLU(0.01),
-        #     nn.Linear(2**6, self.hidden_dim)
-        #     # nn.Tanh()
-        # )
         self.model = nn.Sequential(
             nn.Linear(self.data_dim, 2**6),
             nn.ReLU(),
@@ -30,14 +20,13 @@ class Encoder_onehot(nn.Module):
             nn.ReLU(),
             nn.Linear(2**7, 2**8),
             nn.ReLU(),
-            # nn.BatchNorm1d(2**8),
-            nn.Linear(2**8, 2**6),
+            nn.Linear(2**8, 2**8),
             nn.ReLU(),
-            nn.Linear(2**6, self.hidden_dim),
+            nn.Linear(2**8, self.hidden_dim),
             nn.Tanh()
         )
 
-
+        # self.model.apply(init_weight_seq)
         
     def forward(self, x):
         out = self.model(x)
@@ -50,19 +39,6 @@ class Decoder_onehot(nn.Module):
         self.hidden_dim = hidden_dim #the size of latent space
         self.data_dim = data_dim
         
-        # self.model = nn.Sequential(
-        #     nn.Linear(self.data_dim, 2**6),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**6, 2**8),
-        #     nn.LeakyReLU(0.01),
-        #     nn.Linear(2**8, 2**8),
-        #     nn.LeakyReLU(0.01),
-        #     nn.Linear(2**8, 2**6),
-        #     nn.LeakyReLU(0.01),
-        #     nn.Linear(2**6, self.hidden_dim)
-        #     # nn.Tanh()
-        # )
-
         self.model = nn.Sequential(
             nn.Linear(self.hidden_dim, 2**6),
             nn.ReLU(),
@@ -70,12 +46,13 @@ class Decoder_onehot(nn.Module):
             nn.ReLU(),
             nn.Linear(2**7, 2**8),
             nn.ReLU(),
-            # nn.BatchNorm1d(2**8),
-            nn.Linear(2**8, 2**6),
+            nn.Linear(2**8, 2**8),
             nn.ReLU(),
-            nn.Linear(2**6, self.data_dim),
+            nn.Linear(2**8, self.data_dim),
             nn.Sigmoid()
         )
+
+        # self.model.apply(init_weight_seq)
         
     def forward(self, x):
         out = self.model(x)
@@ -184,31 +161,17 @@ class Encoder_cont_emb(nn.Module):
         
         self.hidden_dim = hidden_dim #the size of latent space
         self.data_dim = data_dim
-                
-        # self.model = nn.Sequential(
-        #     nn.Linear(self.data_dim, 2**6),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**6, 2**8),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**8, 2**8),
-        #     nn.LeakyReLU(0.1),
-        #     # nn.BatchNorm1d(2**8),
-        #     nn.Linear(2**8, 2**6),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**6, self.hidden_dim),
-        #     nn.Tanh()
-        # )
 
         self.model = nn.Sequential(
             nn.Linear(self.data_dim, 2**6),
             nn.ReLU(),
-            nn.Linear(2**6, 2**8),
+            nn.Linear(2**6, 2**7),
+            nn.ReLU(),
+            nn.Linear(2**7, 2**8),
             nn.ReLU(),
             nn.Linear(2**8, 2**8),
             nn.ReLU(),
-            nn.Linear(2**8, 2**6),
-            nn.ReLU(),
-            nn.Linear(2**6, self.hidden_dim),
+            nn.Linear(2**8, self.hidden_dim),
             nn.Tanh()
         )
         
@@ -226,29 +189,16 @@ class Decoder_cont_emb(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(self.hidden_dim, 2**6),
             nn.ReLU(),
-            nn.Linear(2**6, 2**8),
+            nn.Linear(2**6, 2**7),
+            nn.ReLU(),
+            nn.Linear(2**7, 2**8),
             nn.ReLU(),
             nn.Linear(2**8, 2**8),
             nn.ReLU(),
-            nn.Linear(2**8, 2**6),
-            nn.ReLU(),
-            nn.Linear(2**6, self.data_dim),
+            nn.Linear(2**8, self.data_dim),
             nn.Tanh()
         )
 
-        # self.model = nn.Sequential(
-        #     nn.Linear(self.hidden_dim, 2**6),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**6, 2**8),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**8, 2**8),
-        #     nn.LeakyReLU(0.1),
-        #     # nn.BatchNorm1d(2**8),
-        #     nn.Linear(2**8, 2**6),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Linear(2**6, self.data_dim),
-        #     nn.Tanh()
-        # )
         
     def forward(self, x):
         out = self.model(x)
