@@ -31,7 +31,7 @@ def onehot_emb_categorical(data: pd.DataFrame, cat_features):
     data_cat_onehot = pd.get_dummies(data[cat_features], columns=cat_features)
     return data_cat_onehot
 
-def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-3, epochs=20, batch_size=2**8, device='cpu'):
+def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-3, epochs=20, batch_size=2**8, device='cpu', eps=2):
     data_dim_onehot = len(data_cat_onehot.columns)
 
     encoder_onehot = Encoder_onehot(data_dim_onehot, dim_Xoh).to(device)
@@ -40,21 +40,33 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
     optimizer_Enc = optim.Adam(encoder_onehot.parameters(), lr=lr)
     optimizer_Dec = optim.Adam(decoder_onehot.parameters(), lr=lr)
 
-    scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc, gamma=0.97)
-    scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec, gamma=0.97)
+    scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc, gamma=0.98)
+    scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec, gamma=0.98)
 
     loader_onehot = DataLoader(torch.FloatTensor(data_cat_onehot.values), batch_size, shuffle=True)
 
     epochs = tqdm(range(epochs))
 
+    #privacy parameters
+    q = batch_size / len(data_cat_onehot)
+    alpha = 2
+    delta = 0.1 #or 1/batch_size
+    n_iter = len(data_cat_onehot) // batch_size
+    sensitivity = 300/batch_size #1000/batch_size
+    std = np.sqrt((4 * q * alpha**2 * (sensitivity)**2 * np.sqrt(2 * n_iter * np.log(1/delta))) / (2 * (alpha-1) * eps))
+
+    print(f'E_oh with {eps, delta}-Differential Privacy')
+
     for epoch in epochs:
         for batch_idx, X in enumerate(loader_onehot):
             loss = torch.nn.BCELoss()
+            # loss = torch.nn.BCEWithLogitsLoss()
             
             H = encoder_onehot(X.float().to(device))
             X_tilde = decoder_onehot(H.to(device))
 
-            criterion = loss(X_tilde, X.to(device)).to(device)
+            criterion0 = (loss(X_tilde, X.to(device))).to(device)
+            criterion = (criterion0 + np.random.normal(0, std)).to(device)
             
             optimizer_Enc.zero_grad()
             optimizer_Dec.zero_grad()
@@ -68,7 +80,7 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
         scheduler_Dec.step()
 
         # print(f'epoch {epoch}: Loss = {criterion:.8f}')
-        epochs.set_description('Loss E_oh: %.9f ' % criterion.item())
+        epochs.set_description(f'Loss E_oh: {criterion0.item()} || Privacy Loss E_oh: {criterion.item()}')
 
     encoder_onehot.eval()
     decoder_onehot.eval()
@@ -82,8 +94,8 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
 CONTINUOUS FEATURES
 '''
 
-def preprocessing_cont(X, cont_features, type_scale='Standardize', max_clusters=10,\
-                    weight_threshold=0.005, epochs=20, lr=0.001, bs=2**8, dim_cont_emb=3, device='cpu'):
+def preprocessing_cont(X, cont_features, type_scale='Autoencoder', max_clusters=15,\
+                    weight_threshold=0.005, epochs=20, lr=0.001, bs=2**8, dim_cont_emb=3, device='cpu', eps=0.01):
     data = copy.deepcopy(X)
 
     if type_scale == 'CBNormalize':
@@ -104,10 +116,14 @@ def preprocessing_cont(X, cont_features, type_scale='Standardize', max_clusters=
         data[cont_features] = np.vstack(data_normalized).T
         components = np.vstack(data_component).T
         scaler.append(components)
+        X_cont = data[cont_features].values
 
     elif type_scale == 'Standardize':
-        scaler = StandardScaler()
-        data[cont_features] = scaler.fit_transform(data[cont_features].values)
+        scaler = []
+        scaler_std = StandardScaler()
+        data[cont_features] = scaler_std.fit_transform(data[cont_features].values)
+        X_cont = data[cont_features].values
+        scaler.append(scaler_std)
 
     elif type_scale == 'Autoencoder':
         scaler = []
@@ -122,12 +138,25 @@ def preprocessing_cont(X, cont_features, type_scale='Standardize', max_clusters=
         encoder_cont_emb = Encoder_cont_emb(len(cont_features), dim_cont_emb).to(device)
         decoder_cont_emb = Decoder_cont_emb(dim_cont_emb, len(cont_features)).to(device)
 
-        optimizer_Enc_cont_emb = optim.Adam(encoder_cont_emb.parameters(), lr)
-        optimizer_Dec_cont_emb = optim.Adam(decoder_cont_emb.parameters(), lr)
+        optimizer_Enc_cont_emb = optim.Adam(encoder_cont_emb.parameters(), lr, betas=(0.9, 0.999), amsgrad=True)
+        optimizer_Dec_cont_emb = optim.Adam(decoder_cont_emb.parameters(), lr, betas=(0.9, 0.999), amsgrad=True)
+
+        scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc_cont_emb, gamma=0.98)
+        scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec_cont_emb, gamma=0.98)
 
         loader_cont_emb = DataLoader(torch.FloatTensor(data[cont_features].values), bs, shuffle=True)
 
         epochs = tqdm(range(epochs))
+
+        #privacy parameters
+        q = bs / len(data)
+        alpha = 2
+        delta = 0.1 #or 1/batch_size
+        n_iter = len(data) // bs
+        sensitivity = 4/bs
+        std = np.sqrt((4 * q * alpha**2 * (sensitivity)**2 * np.sqrt(2 * n_iter * np.log(1/delta))) / (2 * (alpha-1) * eps))
+
+        print(f'E_cont with {eps, delta}-Differential Privacy')
 
         for epoch in epochs:
             for batch_idx, X in enumerate(loader_cont_emb):
@@ -137,7 +166,7 @@ def preprocessing_cont(X, cont_features, type_scale='Standardize', max_clusters=
                 X_tilde = decoder_cont_emb(H.to(device))
                 
                 loss_mse = loss(X.float().to(device), X_tilde).to(device)
-                criterion = loss_mse
+                criterion = (loss_mse + np.random.normal(0, std)).to(device)
                 
                 optimizer_Enc_cont_emb.zero_grad()
                 optimizer_Dec_cont_emb.zero_grad()
@@ -147,7 +176,10 @@ def preprocessing_cont(X, cont_features, type_scale='Standardize', max_clusters=
                 optimizer_Enc_cont_emb.step()
                 optimizer_Dec_cont_emb.step()
 
-            epochs.set_description(f'Loss E_cont: {loss_mse.item()}')
+            scheduler_Enc.step()
+            scheduler_Dec.step()
+
+            epochs.set_description(f'Loss E_cont: {loss_mse.item()} || Privacy Loss E_cont: {criterion.item()}')
 
         encoder_cont_emb.eval()
         decoder_cont_emb.eval()
@@ -188,12 +220,11 @@ def preprocessing_date(data: pd.DataFrame, date_feature):
 CLIENT FEATURES
 '''
 
-def create_client_embeddings(data: pd.DataFrame, client_info, dim_X_cl=4, lr=1e-3, epochs=20, batch_size=2**8, device='cpu'):
+def create_client_embeddings(data: pd.DataFrame, client_info, dim_X_cl=4, lr=1e-3, epochs=20, batch_size=2**8, device='cpu', eps=0.5):
     label_encoders_array = []
     client_info_new_features = []
 
     for i in range(len(client_info)):
-        # enc = LabelEncoder()
         enc = FrequencyEncoder()
         customer_enc = enc.fit_transform(data, column=client_info[i])[client_info[i]].values
         # customer_enc = enc.fit_transform(data[client_info[i]])
@@ -222,6 +253,16 @@ def create_client_embeddings(data: pd.DataFrame, client_info, dim_X_cl=4, lr=1e-
 
     epochs = tqdm(range(epochs))
 
+    #privacy parameters
+    q = batch_size / len(data)
+    alpha = 2
+    delta = 0.1 #or 1/batch_size
+    n_iter = len(data) // batch_size
+    sensitivity = 4/batch_size
+    std = np.sqrt((4 * q * alpha**2 * (sensitivity)**2 * np.sqrt(2 * n_iter * np.log(1/delta))) / (2 * (alpha-1) * eps))
+
+    print(f'E_cl with {eps, delta}-Differential Privacy')
+
     for epoch in epochs:
         for batch_idx, X in enumerate(loader_cl_emb):
             loss = torch.nn.MSELoss()
@@ -230,7 +271,7 @@ def create_client_embeddings(data: pd.DataFrame, client_info, dim_X_cl=4, lr=1e-
             X_tilde = decoder_cl_emb(H.to(device))
             
             loss_mse = loss(X.float().to(device), X_tilde).to(device)
-            criterion = loss_mse + np.random.normal(0, 0.01)
+            criterion = (loss_mse + np.random.normal(0, std)).to(device)
             
             optimizer_Enc_cl_emb.zero_grad()
             optimizer_Dec_cl_emb.zero_grad()
@@ -240,7 +281,7 @@ def create_client_embeddings(data: pd.DataFrame, client_info, dim_X_cl=4, lr=1e-
             optimizer_Enc_cl_emb.step()
             optimizer_Dec_cl_emb.step()
 
-        epochs.set_description(f'Loss E_cl: {loss_mse.item()}, Loss E_cl_DP: {criterion.item()}')
+        epochs.set_description(f'Loss E_cl: {loss_mse.item()} || Privacy Loss E_cl: {criterion.item()}')
 
     client_encoding = encoder_cl_emb(torch.FloatTensor(client_info_for_emb).to(device)).detach().cpu().numpy()
 
@@ -277,7 +318,7 @@ def behaviour_encoding(data, dim, name_client_id='customer',  name_agg_feature='
 
 def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_client_id,\
                     name_agg_feature, lr=1e-3, epochs=20, batch_size = 2**8, model_time='poisson',\
-                    n_splits=2, opt_time=True, xi_array=[], q_array=[], device='cpu'):
+                    n_splits=2, opt_time=True, xi_array=[], q_array=[], device='cpu', eps=0.5):
 
     if time == 'synth':
         data_synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = generate_synth_time(data,\
@@ -311,13 +352,15 @@ def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_cl
     optimizer_Enc = optim.Adam(encoder.parameters(), lr)
     optimizer_Dec = optim.Adam(decoder.parameters(), lr)
 
-    c = 1
+    #privacy parameters
     q = batch_size / len(X_emb)
-    alpha = 1.1
-    std = 0.3
-    delta = 0.01
-    epsilon = 4*(q * alpha**2 * 4*c**2/batch_size) / (2*(alpha-1)*std) * np.sqrt(2 * 1/q * np.log(1/delta))
-    print(f'Encoder with ({epsilon}, {delta})-differential privacy')
+    alpha = 2
+    delta = 0.1 #or 1/batch_size
+    n_iter = len(X_emb) // batch_size
+    sensitivity = 4/batch_size
+    std = np.sqrt((4 * q * alpha**2 * (sensitivity)**2 * np.sqrt(2 * n_iter * np.log(1/delta))) / (2 * (alpha-1) * eps))
+
+    print(f'E_cv with {eps, delta}-Differential Privacy')
 
     loader = DataLoader(torch.FloatTensor(X_emb), batch_size=batch_size, shuffle=True)
 
@@ -332,7 +375,7 @@ def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_cl
             
             loss_mse = loss(X.float().to(device), X_tilde).to(device)
             # criterion = loss_mse + np.random.laplace(loc=0, scale=4*c**2 / epsilon)
-            criterion = loss_mse + np.random.normal(0, std)
+            criterion = (loss_mse + np.random.normal(0, std)).to(device)
             
             optimizer_Enc.zero_grad()
             optimizer_Dec.zero_grad()
@@ -342,7 +385,7 @@ def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_cl
             optimizer_Enc.step()
             optimizer_Dec.step()
 
-        epochs.set_description('Loss E_Vc: %.9f, Loss E_Vc_DP: %.9f' % (loss_mse.item(), criterion.item()))
+        epochs.set_description('Loss E_cv: %.9f || Privacy Loss E_cv: %.9f' % (loss_mse.item(), criterion.item()))
 
     data_encode = encoder(torch.FloatTensor(X_emb).to(device)).detach().cpu().numpy()
     
@@ -408,9 +451,11 @@ class Generator(nn.Module):
         self.feed_forward_generator_layers2 = nn.ModuleList(
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
-            nn.ReLU(),
-            # nn.Dropout(0.2),
-            nn.Linear(self.h_dim, self.h_dim)
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.2),
+            nn.Linear(self.h_dim, self.h_dim),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
@@ -441,19 +486,19 @@ class Generator(nn.Module):
         for i in range(self.num_blocks):
             res = out
 
-            x1 = conv_vec(out, torch.FloatTensor(self.filter1).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
-            x2 = conv_vec(out, torch.FloatTensor(self.filter2).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
-            x3 = conv_vec(out, torch.FloatTensor(self.filter3).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x1 = conv_vec(out, torch.FloatTensor(self.filter1).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x2 = conv_vec(out, torch.FloatTensor(self.filter2).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x3 = conv_vec(out, torch.FloatTensor(self.filter3).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
 
-            x1 = self.lrelu(self.linear_layers_conv1[i](x1))
-            x2 = self.lrelu(self.linear_layers_conv2[i](x2))
-            x3 = self.lrelu(self.linear_layers_conv3[i](x3))
+            # x1 = self.lrelu(self.linear_layers_conv1[i](x1))
+            # x2 = self.lrelu(self.linear_layers_conv2[i](x2))
+            # x3 = self.lrelu(self.linear_layers_conv3[i](x3))
 
-            out = torch.cat([x1, x2, x3], dim=1)
+            # out = torch.cat([x1, x2, x3], dim=1)
  
-            out = self.linear_layers[i](out)
+            # out = self.linear_layers[i](out)
 
-            # out = self.feed_forward_generator_layers2[i](out)
+            out = self.feed_forward_generator_layers2[i](out)
 
             #add & norm
             out += res
@@ -511,9 +556,11 @@ class Supervisor(nn.Module):
         self.feed_forward_generator_layers2 = nn.ModuleList(
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
-            nn.ReLU(),
-            # nn.Dropout(0.2),
-            nn.Linear(self.h_dim, self.h_dim)
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.2),
+            nn.Linear(self.h_dim, self.h_dim),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
@@ -544,21 +591,21 @@ class Supervisor(nn.Module):
         for i in range(self.num_blocks):
             res = out
 
-            x1 = conv_vec(out, torch.FloatTensor(self.filter1).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
-            x2 = conv_vec(out, torch.FloatTensor(self.filter2).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
-            x3 = conv_vec(out, torch.FloatTensor(self.filter3).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x1 = conv_vec(out, torch.FloatTensor(self.filter1).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x2 = conv_vec(out, torch.FloatTensor(self.filter2).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x3 = conv_vec(out, torch.FloatTensor(self.filter3).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
 
             
-            x1 = self.lrelu(self.linear_layers_conv1[i](x1))
-            x2 = self.lrelu(self.linear_layers_conv2[i](x2))
-            x3 = self.lrelu(self.linear_layers_conv3[i](x3))
+            # x1 = self.lrelu(self.linear_layers_conv1[i](x1))
+            # x2 = self.lrelu(self.linear_layers_conv2[i](x2))
+            # x3 = self.lrelu(self.linear_layers_conv3[i](x3))
 
            
-            out = torch.cat([x1, x2, x3], dim=1)
+            # out = torch.cat([x1, x2, x3], dim=1)
  
-            out = self.linear_layers[i](out)
+            # out = self.linear_layers[i](out)
 
-            # out = self.feed_forward_generator_layers2[i](out)
+            out = self.feed_forward_generator_layers2[i](out)
 
             #add & norm
             out += res
@@ -587,7 +634,7 @@ class Discriminator(nn.Module):
         self.fc1 = nn.Linear(self.data_dim, self.h_dim)
         self.lrelu = nn.LeakyReLU(0.1)
         # self.relu = nn.ELU(0.9)
-        self.relu = nn.PReLU()
+        self.relu = nn.ReLU()
 
         self.layernorm0 = nn.LayerNorm(self.h_dim)
         # self.layernorm0 = nn.BatchNorm1d(self.h_dim)
@@ -598,21 +645,23 @@ class Discriminator(nn.Module):
         self.linear_layers_conv2 = nn.ModuleList([nn.Linear(self.h_dim, 2**6) for _ in range(self.num_blocks)])
         self.linear_layers_conv3 = nn.ModuleList([nn.Linear(self.h_dim, 2**6) for _ in range(self.num_blocks)])
 
-        self.feed_forward_discriminator_layers = nn.ModuleList(
-            [nn.Sequential(
-            nn.Linear(self.h_dim, self.h_dim),
-            nn.ReLU(),
-            # nn.Dropout(0.15),
-            nn.Linear(self.h_dim, self.h_dim)
-        ) for _ in range(self.num_blocks)]
-        )
+        # self.feed_forward_discriminator_layers = nn.ModuleList(
+        #     [nn.Sequential(
+        #     nn.Linear(self.h_dim, self.h_dim),
+        #     nn.ReLU(),
+        #     # nn.Dropout(0.15),
+        #     nn.Linear(self.h_dim, self.h_dim)
+        # ) for _ in range(self.num_blocks)]
+        # )
 
         self.feed_forward_discriminator_layers2 = nn.ModuleList(
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
-            nn.ReLU(),
-            # nn.Dropout(0.1),
-            nn.Linear(self.h_dim, self.h_dim)
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.2),
+            nn.Linear(self.h_dim, self.h_dim),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
@@ -646,19 +695,19 @@ class Discriminator(nn.Module):
         for i in range(self.num_blocks):
             res = out
 
-            x1 = conv_vec(out, torch.FloatTensor(self.filter1).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
-            x2 = conv_vec(out, torch.FloatTensor(self.filter2).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
-            x3 = conv_vec(out, torch.FloatTensor(self.filter3).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x1 = conv_vec(out, torch.FloatTensor(self.filter1).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x2 = conv_vec(out, torch.FloatTensor(self.filter2).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
+            # x3 = conv_vec(out, torch.FloatTensor(self.filter3).expand(x_size[0], self.gauss_filter_dim)).to(self.device)
 
-            x1 = self.lrelu(self.linear_layers_conv1[i](x1))
-            x2 = self.lrelu(self.linear_layers_conv2[i](x2))
-            x3 = self.lrelu(self.linear_layers_conv3[i](x3))
+            # x1 = self.lrelu(self.linear_layers_conv1[i](x1))
+            # x2 = self.lrelu(self.linear_layers_conv2[i](x2))
+            # x3 = self.lrelu(self.linear_layers_conv3[i](x3))
 
-            out = torch.cat([x1, x2, x3], dim=1)
+            # out = torch.cat([x1, x2, x3], dim=1)
 
-            out = self.linear_layers[i](out)
+            # out = self.linear_layers[i](out)
 
-            # out = self.feed_forward_discriminator_layers2[i](out)
+            out = self.feed_forward_discriminator_layers2[i](out)
 
             #add & norm
             out += res
@@ -750,6 +799,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             fake = generator(z).detach()
             X = X.to(device)
             
+            discriminator.trainable = True
             
             disc_loss = (-torch.mean(discriminator(X)) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
             # disc_loss = disc_loss + grad_penalty(discriminator, X.detach(), torch.cat([fake, Vc], dim=1), device).to(device)
@@ -762,13 +812,6 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             # disc2_loss = torch.mean(torch.log(discriminator2(X)) + torch.log(1 - discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device)
             # disc2_loss = disc2_loss + np.random.normal(0, 0.1)
 
-            for dp in discriminator.parameters():
-                        dp.data.clamp_(-b_d1, b_d1)
-
-            for dp in discriminator2.parameters():
-                        dp.data.clamp_(-b_d2, b_d2)
-            
-
             optimizer_D.zero_grad()
             disc_loss.backward()
             optimizer_D.step()
@@ -776,8 +819,17 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             optimizer_D2.zero_grad()
             disc2_loss.backward()
             optimizer_D2.step()
+
+            for dp in discriminator.parameters():
+                        dp.data.clamp_(-b_d1, b_d1)
+
+            for dp in discriminator2.parameters():
+                        dp.data.clamp_(-b_d2, b_d2)
+
                     
-            if batch_idx % 1 == 0:
+            if batch_idx % 2 == 0:
+                discriminator.trainable = False
+
                 gen_loss1 = -torch.mean(discriminator(torch.cat([generator(z), Vc], dim=1))).to(device)
                 supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1))) +\
                                     lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
@@ -788,25 +840,25 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
                 
                 gen_loss = (alpha * gen_loss1 + (1 - alpha) * supervisor_loss)
                 
-            
-                optimizer_G.zero_grad()
-                gen_loss.backward()
-                optimizer_G.step()
                 
                 supervisor_loss2 = ((-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
                     Vc], dim=1)))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
                 
                 # supervisor_loss2 = ((torch.mean(torch.log(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
                 #     Vc], dim=1))))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+
+                optimizer_G.zero_grad()
+                gen_loss.backward()
+                optimizer_G.step()
                 
                 optimizer_S.zero_grad()
                 supervisor_loss2.backward()
                 optimizer_S.step()
 
-        scheduler_G.step()
-        scheduler_D.step()
-        scheduler_S.step()
-        scheduler_D2.step()
+        # scheduler_G.step()
+        # scheduler_D.step()
+        # scheduler_S.step()
+        # scheduler_D2.step()
 
         epochs.set_description('Discriminator Loss: %.5f || Discriminator 2 Loss: %.5f || Generator Loss: %.5f || Supervisor Loss: %.5f' %\
             (disc_loss.item(), disc2_loss.item(), gen_loss.item(), supervisor_loss2.item()))
@@ -971,7 +1023,7 @@ def inverse_transforms(n_samples, synth_data, synth_time, client_info, cont_feat
 
     elif type_scale_cont == 'Standardize':
         synth_cont_feat = synth_data_scaled[:,:dim_X_cont]
-        synth_cont_feat = scaler_cont.inverse_transform(synth_cont_feat)
+        synth_cont_feat = scaler_cont[0].inverse_transform(synth_cont_feat)
 
     elif type_scale_cont == 'Autoencoder':
         synth_cont_feat = synth_data_scaled[:,:dim_X_cont]

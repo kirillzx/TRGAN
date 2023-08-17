@@ -6,7 +6,7 @@ from TRGAN.encoders import *
 from TRGAN.TRGAN_main import *
 
 def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=False,\
-                   directory='Pretrained_model/', names=['TRGAN_E_oh.pkl', 'TRGAN_D_oh.pkl', 'X_oh_emb.npy'], device='cpu', eps=0.5):
+                   directory='Pretrained_model/', names=['TRGAN_E_oh.pkl', 'TRGAN_D_oh.pkl', 'X_oh_emb.npy'], device='cpu', eps=2):
     if load:
         encoder_onehot = Encoder_onehot(len(X_oh.columns), dim_Xoh).to(device)
         decoder_onehot = Decoder_onehot(dim_Xoh, len(X_oh.columns)).to(device)
@@ -142,6 +142,10 @@ def create_cont_emb(dim_X_cont, data, cont_features, lr_E_cont=1e-3, epochs=20, 
         elif type_scale == 'CBNormalize':
             scaler_cont = list(np.load(directory + names, allow_pickle=True))
             X_cont = scaler_cont[0].transform(data)['amount.normalized'].values.reshape(-1, 1)
+
+        elif type_scale == 'Standardize':
+            scaler_cont = list(np.load(directory + names, allow_pickle=True))
+            X_cont = scaler_cont[0].transform(data[cont_features])
 
 
     else:
