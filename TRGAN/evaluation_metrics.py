@@ -10,7 +10,7 @@ from sdmetrics.single_column import TVComplement
 from sdv.metadata import SingleTableMetadata
 from sdmetrics.single_table import NewRowSynthesis
 from sdmetrics.column_pairs import ContingencySimilarity
-from sklearn.metrics import f1_score, recall_score, roc_auc_score
+from sklearn.metrics import f1_score, recall_score, roc_auc_score, mean_squared_error
 from IPython.display import display
 
 import keras
@@ -89,7 +89,29 @@ def evaluate_new_rows(data_array, index, metadata):
     return res_df
 
 
+def eucledian_dist(x):
+    distancies = [0]
+    for i in range(len(x) - 1):
+        distancies.append(np.sqrt(np.sum((x[i] - x[i+1])**2)))
+
+    return np.array(distancies)
+        
+        
+def distance_between_rows(data: list, index_names: list) -> float:
+    arr = []
+    for i in data:
+        arr.append(eucledian_dist(i))
+        
+    mse_errors = [0.0]    
+    for i in range(1, len(arr)):
+        mse_errors.append(mean_squared_error(arr[0], arr[i]))
+        
+    display(pd.DataFrame(mse_errors, columns=['MSE'], index = index_names))
+
+
 def utility_metrics_ml(data: pd.DataFrame):
+    data = copy.deepcopy(data)
+    
     data['transaction_date'] = pd.to_datetime(data['transaction_date'], infer_datetime_format=True)
     data['MONTH'] = data['transaction_date'].apply(lambda date: date.month)
     data['YEAR'] = data['transaction_date'].apply(lambda date: date.year)

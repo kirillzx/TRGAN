@@ -52,7 +52,7 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
     alpha = 2
     delta = 0.1 #or 1/batch_size
     n_iter = len(data_cat_onehot) // batch_size
-    sensitivity = 300/batch_size #1000/batch_size
+    sensitivity = 37/batch_size
     std = np.sqrt((4 * q * alpha**2 * (sensitivity)**2 * np.sqrt(2 * n_iter * np.log(1/delta))) / (2 * (alpha-1) * eps))
 
     print(f'E_oh with {eps, delta}-Differential Privacy')
@@ -195,6 +195,8 @@ def preprocessing_cont(X, cont_features, type_scale='Autoencoder', max_clusters=
         print('Choose preprocessing scheme for continuous features. Available: CBNormalize and Standardize')
 
     # return data[cont_features].values, scaler
+    scaler = np.array(scaler, dtype=object)
+    
     return X_cont, scaler
 
 
@@ -802,15 +804,9 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             discriminator.trainable = True
             
             disc_loss = (-torch.mean(discriminator(X)) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
-            # disc_loss = disc_loss + grad_penalty(discriminator, X.detach(), torch.cat([fake, Vc], dim=1), device).to(device)
-            # disc_loss = disc_loss + np.random.normal(0, 0.1)
-            # disc_loss = torch.mean(torch.log(discriminator(X)) + torch.log(1 - discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
-
+     
             fake_super = supervisor(torch.cat([fake, Vc], dim=1)).to(device)
             disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) 
-            # disc2_loss = disc2_loss + grad_penalty(discriminator2, X.detach(), torch.cat([fake_super, Vc], dim=1), device).to(device)
-            # disc2_loss = torch.mean(torch.log(discriminator2(X)) + torch.log(1 - discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device)
-            # disc2_loss = disc2_loss + np.random.normal(0, 0.1)
 
             optimizer_D.zero_grad()
             disc_loss.backward()

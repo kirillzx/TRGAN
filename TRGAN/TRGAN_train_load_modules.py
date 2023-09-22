@@ -159,6 +159,6 @@ def create_cont_emb(dim_X_cont, data, cont_features, lr_E_cont=1e-3, epochs=20, 
         # joblib.dump(scaler_cont[1], directory + names[3])
         # joblib.dump(scaler_cont[2], directory + names[4])
 
-        np.save(directory + names, scaler_cont)
+        np.save(directory + names, scaler_cont, allow_pickle=True)
 
     return X_cont, scaler_cont
