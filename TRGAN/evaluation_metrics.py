@@ -29,7 +29,7 @@ def evaluate_numerical(data_array, index):
     std_values = list(map(lambda x: x.std(), data_array))
     kurt_values = list(map(lambda x: x.kurtosis(), data_array))
     skew_values = list(map(lambda x: x.skew(), data_array))
-    js_values = list(map(lambda x: jensenshannon(np.sort(data_array[0]), np.sort(x)), data_array))
+    js_values = list(map(lambda x: jensenshannon(np.abs(np.sort(data_array[0])), np.abs(np.sort(x))), data_array))
     ks_values = list(map(lambda x: ks_2samp(data_array[0], x)[0], data_array))
     wd_values = list(map(lambda x: wasserstein_distance(data_array[0], x), data_array))
 
@@ -109,14 +109,14 @@ def distance_between_rows(data: list, index_names: list) -> float:
     display(pd.DataFrame(mse_errors, columns=['MSE'], index = index_names))
 
 
-def utility_metrics_ml(data: pd.DataFrame):
+def utility_metrics_ml(data: pd.DataFrame, L):
     data = copy.deepcopy(data)
     
     data['transaction_date'] = pd.to_datetime(data['transaction_date'], infer_datetime_format=True)
     data['MONTH'] = data['transaction_date'].apply(lambda date: date.month)
     data['YEAR'] = data['transaction_date'].apply(lambda date: date.year)
     
-    data_sum = data.groupby(['customer', 'mcc','MONTH'], as_index=False)['amount'].sum()
+    data_sum = data.groupby(['customer', 'mcc', 'MONTH'], as_index=False)['amount'].sum()
     data_sum['COUNT'] = data.groupby(['customer', 'mcc','MONTH']).size().reset_index().iloc[:,-1]
     labels, uniques = pd.factorize(data_sum['customer'])
     data_sum['id'] = labels
@@ -125,7 +125,7 @@ def utility_metrics_ml(data: pd.DataFrame):
     table_V = data_sum.pivot_table(index=['id', 'MONTH'], columns='mcc', values='amount',fill_value=0).reset_index()
     
     global L_win, ar
-    L_win = 4
+    L_win = L
     ar = []
     
     table_N.groupby('id')['MONTH'].apply(window)
@@ -163,11 +163,11 @@ def utility_metrics_ml(data: pd.DataFrame):
     return df
 
 
-def evaluate_utility(data: list, index_names: list):
+def evaluate_utility(data: list, index_names: list, L=1):
     res_df = pd.DataFrame(columns=['F_1', 'Recall', 'AUC'])
     
     for i in data:
-        df = utility_metrics_ml(i)
+        df = utility_metrics_ml(i, L)
         res_df = pd.concat([res_df, df])
         
     res_df.index = index_names
@@ -213,7 +213,7 @@ class DataGenerator(keras.utils.Sequence):
         month = batch_ind[:, 1]-1
         ind_x = batch_ind[:, -(L_win+1):-1]
         ind_y = batch_ind[:,-1]
-
+        
         X = self.data[ind_x,:]
         Y = self.data[ind_y,:]
         Y = np.where(self.data[ind_y,:], 1, 0)
