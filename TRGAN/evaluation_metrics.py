@@ -4,7 +4,7 @@ import copy
 import random
 from scipy.special import rel_entr, kl_div
 from scipy.spatial.distance import jensenshannon
-from scipy.stats import kstest, ks_2samp, wasserstein_distance
+from scipy.stats import kstest, ks_2samp, wasserstein_distance, entropy
 import scipy.stats as sts
 from sdmetrics.single_column import TVComplement
 from sdv.metadata import SingleTableMetadata
@@ -109,7 +109,7 @@ def distance_between_rows(data: list, index_names: list) -> float:
     display(pd.DataFrame(mse_errors, columns=['MSE'], index = index_names))
 
 
-def utility_metrics_ml(data: pd.DataFrame, L):
+def utility_metrics_ml(data: pd.DataFrame, L, month_test):
     data = copy.deepcopy(data)
     
     data['transaction_date'] = pd.to_datetime(data['transaction_date'], infer_datetime_format=True)
@@ -131,7 +131,7 @@ def utility_metrics_ml(data: pd.DataFrame, L):
     table_N.groupby('id')['MONTH'].apply(window)
     df_indxs= pd.DataFrame(ar, columns=['id', 'last_month']+list(range(L_win+1)))
 
-    month_test = 10
+    month_test = month_test
     ind_test = df_indxs[df_indxs['last_month'] == month_test]
     ind_train = df_indxs[df_indxs['last_month'] < month_test]
     NCATS = table_N.shape[1] - 2
@@ -163,11 +163,11 @@ def utility_metrics_ml(data: pd.DataFrame, L):
     return df
 
 
-def evaluate_utility(data: list, index_names: list, L=1):
+def evaluate_utility(data: list, index_names: list, L=1, month_test=10):
     res_df = pd.DataFrame(columns=['F_1', 'Recall', 'AUC'])
     
     for i in data:
-        df = utility_metrics_ml(i, L)
+        df = utility_metrics_ml(i, L, month_test)
         res_df = pd.concat([res_df, df])
         
     res_df.index = index_names
@@ -233,3 +233,110 @@ def create_model(NCATS, NFILTERS, OPTIM):
     model_clf.compile(loss='binary_crossentropy',optimizer=OPTIM,metrics=['accuracy'])
     
     return model_clf
+
+
+'''
+PRIVACY PRESERVING
+'''
+
+def k_anonymity(data, quasi_id, sensitive_att):
+    equiv_classes_k_anon = data.groupby(quasi_id).count()[sensitive_att].reset_index()
+
+    return  equiv_classes_k_anon.iloc[:, -1].min()
+
+def l_diversity(data, quasi_id, sensitive_att):
+    equiv_classes_l_div = data.groupby(quasi_id).nunique()[sensitive_att].reset_index()
+
+    return  equiv_classes_l_div.iloc[:, -1].min()
+
+def t_closeness(data, quasi_id, sensitive_att):
+    equiv_classes_t_clos = data.groupby(quasi_id).apply(lambda x: wasserstein_distance(x[sensitive_att], data[sensitive_att].values)).reset_index()
+    
+    return  equiv_classes_t_clos.iloc[:, -1].max()
+
+def l_diversity_cont(data, quasi_id, sensitive_att):
+    equiv_classes_l_div_c = data.groupby(quasi_id).apply(lambda x: np.exp(entropy(x[sensitive_att]))).reset_index()
+    
+    return  equiv_classes_l_div_c.iloc[:, -1].min()
+
+
+
+def evaluate_utility_reg(data: list, index_names: list, L=1, month_test=10):
+    res_df = pd.DataFrame(columns=['$R^2$'])
+    
+    for i in data:
+        df = utility_metrics_ml_reg(i, L, month_test)
+        res_df = pd.concat([res_df, df])
+        
+    res_df.index = index_names
+    
+    display(res_df)
+    
+
+def create_model_reg(NCATS, NFILTERS, OPTIM):
+    inp = Input(shape=(L_win,NCATS))
+    inp_ck = Input(shape=(1,))
+    inp_m = Input(shape=(1,))
+    
+    lay = LSTM(NFILTERS)(inp)
+    trg_clf = Dense(NCATS)(lay)
+
+    model_clf = Model(inputs=[inp,inp_ck,inp_m], outputs=trg_clf)
+    model_clf.compile(loss='mean_squared_error',optimizer=OPTIM,metrics=['accuracy'])
+    
+    return model_clf
+
+def utility_metrics_ml_reg(data: pd.DataFrame, L, month_test):
+    data = copy.deepcopy(data)
+    
+    data['transaction_date'] = pd.to_datetime(data['transaction_date'], infer_datetime_format=True)
+    data['MONTH'] = data['transaction_date'].apply(lambda date: date.month)
+    data['YEAR'] = data['transaction_date'].apply(lambda date: date.year)
+    
+    data_sum = data.groupby(['customer', 'mcc', 'MONTH'], as_index=False)['amount'].sum()
+    data_sum['COUNT'] = data.groupby(['customer', 'mcc','MONTH']).size().reset_index().iloc[:,-1]
+    labels, uniques = pd.factorize(data_sum['customer'])
+    data_sum['id'] = labels
+    
+    # table_N = data_sum.pivot_table(index=['id', 'MONTH'], columns='mcc', values='COUNT',fill_value=0).reset_index()
+    table_V = data_sum.pivot_table(index=['id', 'MONTH'], columns='mcc', values='amount',fill_value=0).reset_index()
+    
+    global L_win, ar
+    L_win = L
+    ar = []
+    
+    table_V.groupby('id')['MONTH'].apply(window)
+    df_indxs= pd.DataFrame(ar, columns=['id', 'last_month']+list(range(L_win+1)))
+
+    month_test = month_test
+    ind_test = df_indxs[df_indxs['last_month'] == month_test]
+    ind_train = df_indxs[df_indxs['last_month'] < month_test]
+    NCATS = table_V.shape[1] - 2
+    OPTIM = Adam(lr=0.001)
+    NFILTERS = 128
+    
+    model_RNN = create_model_reg(NCATS, NFILTERS, OPTIM)
+    BATCH_SIZE = 64
+    NB_EPOCH = 30
+    g_train = DataGenerator(table_V.values[:,2:], ind_train.values, BATCH_SIZE, NCATS)
+    g_test = DataGenerator(table_V.values[:,2:], ind_test.values, BATCH_SIZE, NCATS)
+    model_RNN.fit_generator(generator=g_train, validation_data=g_test,epochs=NB_EPOCH, verbose=0)
+    
+    y_pred = model_RNN.predict_generator(generator=g_test)
+    y_true = np.vstack([g_test[i][1] for i in range(len(g_test))])
+    
+    TEST_CAT = 3
+    def make_err_df(y_true, y_pred):
+        return pd.DataFrame(np.vstack((y_true,y_pred)).transpose(), columns=['y_true', 'y_pred'])
+
+    err_RNN = make_err_df(y_true[:,TEST_CAT],y_pred[:,TEST_CAT])
+    err_RNN.name = 'RNN'
+    
+    # df = pd.DataFrame(np.array([[f1_score(err_RNN['y_true'], np.where(err_RNN['y_pred'] < 0.5, 0, 1))],\
+    #                     [recall_score(err_RNN['y_true'], np.where(err_RNN['y_pred'] < 0.5, 0, 1))],\
+    #                     [roc_auc_score(err_RNN['y_true'], err_RNN['y_pred'])]]).T, columns=['F_1', 'Recall', 'AUC'])
+    
+    df = pd.DataFrame(np.array([[r2_score(err_RNN['y_true'], err_RNN['y_pred'])]]).T, columns=['$R^2$'])
+    
+    
+    return df
