@@ -1299,29 +1299,7 @@ def sample_scenario(n_samples, generator, supervisor, noise_dim, cond_vector, X_
 
     return synth_data, synth_time
 
-'''
-PRIVACY PRESERVING
-'''
 
-def k_anonymity(data, quasi_id, sensitive_att):
-    equiv_classes_k_anon = data.groupby(quasi_id).count()[sensitive_att].reset_index()
-
-    return  equiv_classes_k_anon.iloc[:, -1].min()
-
-def l_diversity(data, quasi_id, sensitive_att):
-    equiv_classes_l_div = data.groupby(quasi_id).nunique()[sensitive_att].reset_index()
-
-    return  equiv_classes_l_div.iloc[:, -1].min()
-
-def t_closeness(data, quasi_id, sensitive_att):
-    equiv_classes_t_clos = data.groupby(quasi_id).apply(lambda x: wasserstein_distance(x[sensitive_att], data[sensitive_att].values)).reset_index()
-    
-    return  equiv_classes_t_clos.iloc[:, -1].max()
-
-def l_diversity_cont(data, quasi_id, sensitive_att):
-    equiv_classes_l_div_c = data.groupby(quasi_id).apply(lambda x: np.exp(entropy(x[sensitive_att]))).reset_index()
-    
-    return  equiv_classes_l_div_c.iloc[:, -1].min()
 
 
 def dclProcess(N, M):
