@@ -794,7 +794,7 @@ z_func = np.vectorize(z_func)
 
 
 def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_size=2**9, lr_rates=[3e-4, 3e-4, 3e-4, 3e-4],\
-                    num_epochs=15, num_blocks_gen=1, num_blocks_dis=2, h_dim=2**7, lambda1=3, alpha=0.75, window_size=25, device='cpu',\
+                    num_epochs=15, num_blocks_gen=1, num_blocks_dis=2, h_dim=2**7, lambda1=3, alpha_r=0.75, window_size=25, device='cpu',\
                     privacy_type='RDP', eps=1e-3):
 
     data_dim = dim_X_emb
@@ -900,7 +900,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
                     supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1))) +\
                                         lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
 
-                    gen_loss = (alpha * gen_loss1 + (1 - alpha) * supervisor_loss)
+                    gen_loss = (alpha_r * gen_loss1 + (1 - alpha_r) * supervisor_loss)
                     
                     supervisor_loss2 = ((-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
                         Vc], dim=1)))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
@@ -1033,7 +1033,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
                     supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1))) +\
                                         lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
 
-                    gen_loss = (alpha * gen_loss1 + (1 - alpha) * supervisor_loss)
+                    gen_loss = (alpha_r * gen_loss1 + (1 - alpha_r) * supervisor_loss)
                     
                     optimizer_G.zero_grad()
                     gen_loss.backward()
