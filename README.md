@@ -2,6 +2,12 @@
 ### Kirill Zakharov, Elizaveta Stavinova, Anton Lysenko
 
 The official realisation of the prposed method TRGAN (link on the article will be available later)
+Cite: Kirill Zakharov, Elizaveta Stavinova, and Anton Lysenko. 2023. TRGAN:
+A Time-Dependent Generative Adversarial Network for Synthetic Trans-
+actional Data Generation. In 2023 7th International Conference on Software
+and e-Business (ICSeB 2023), December 21–23, 2023, Osaka, Japan. ACM, New
+York, NY, USA, 8 pages. https://doi.org/10.1145/3641067.3641076
+
 
 We have proposed a new approach for synthetic bank transaction generation with time factor. For that we developed the mechanism for synthetic time generation based on Poisson processes, preprocessing scheme for all kinds of attributes in transactional data and the new GAN architecture with generator, supervisor and two discriminators with conditional vector depending on time.
 
