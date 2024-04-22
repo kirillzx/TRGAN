@@ -2,7 +2,8 @@
 ### Kirill Zakharov, Elizaveta Stavinova, Anton Lysenko
 
 The official realisation of the prposed method TRGAN (link on the article will be available later)
-Cite: Kirill Zakharov, Elizaveta Stavinova, and Anton Lysenko. 2023. TRGAN:
+
+**Cite: Kirill Zakharov, Elizaveta Stavinova, and Anton Lysenko. 2023. TRGAN:
 A Time-Dependent Generative Adversarial Network for Synthetic Trans-
 actional Data Generation. In 2023 7th International Conference on Software
 and e-Business (ICSeB 2023), December 21–23, 2023, Osaka, Japan. ACM, New
