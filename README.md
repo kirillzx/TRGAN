@@ -66,5 +66,5 @@ Comparison of synthetic deltas and the real one (Synthetic time generation mecha
 </p>
 
 <p align="center">
-<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/scenario_by_values.png"  width="60%" height="30%">
+<img src="https://github.com/kirillzx/TRGAN/blob/main/Images/scenario_by_value.png"  width="60%" height="30%">
 </p>
