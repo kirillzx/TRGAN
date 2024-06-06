@@ -66,7 +66,8 @@ def create_categorical_embeddings(data_cat_onehot: pd.DataFrame, dim_Xoh, lr=1e-
             X_tilde = decoder_onehot(H.to(device))
 
             criterion0 = (loss(X_tilde, X.to(device))).to(device)
-            criterion = (criterion0 + np.random.normal(0, std)).to(device)
+            # criterion = (criterion0 + np.random.normal(0, std)).to(device)
+            criterion = criterion0.to(device)
             
             optimizer_Enc.zero_grad()
             optimizer_Dec.zero_grad()
@@ -784,8 +785,8 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
     epochs = tqdm(range(num_epochs))
     loss_array = []
 
-    b_d1 = 0.01
-    b_d2 = 0.01
+    b_d1 = 0.02
+    b_d2 = 0.02
 
     for epoch in epochs:
         for batch_idx, X in enumerate(loader_g):
@@ -798,14 +799,14 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
             z = torch.cat([noise, Vc], dim=1).to(device)
             
-            fake = generator(z).detach()
+            fake = torch.nan_to_num(generator(z))
             X = X.to(device)
             
             discriminator.trainable = True
             
-            disc_loss = (-torch.mean(discriminator(X)) + torch.mean(discriminator(torch.cat([fake, Vc], dim=1)))).to(device)
+            disc_loss = (-torch.mean(torch.nan_to_num(discriminator(X))) + torch.mean(torch.nan_to_num(discriminator(torch.cat([fake, Vc], dim=1))))).to(device)
      
-            fake_super = supervisor(torch.cat([fake, Vc], dim=1)).to(device)
+            fake_super = supervisor(torch.cat([fake.detach(), Vc], dim=1)).to(device)
             disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) 
 
             optimizer_D.zero_grad()
@@ -823,11 +824,11 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
                         dp.data.clamp_(-b_d2, b_d2)
 
                     
-            if batch_idx % 2 == 0:
+            if batch_idx % 3 == 0:
                 discriminator.trainable = False
 
-                gen_loss1 = -torch.mean(discriminator(torch.cat([generator(z), Vc], dim=1))).to(device)
-                supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()), Vc], dim=1))) +\
+                gen_loss1 = -torch.mean(torch.nan_to_num(discriminator(torch.cat([generator(z), Vc], dim=1)))).to(device)
+                supervisor_loss = (-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1)), Vc], dim=1))) +\
                                     lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
                 
                 # gen_loss1 = torch.mean(torch.log(discriminator(torch.cat([generator(z), Vc], dim=1)))).to(device)
@@ -837,8 +838,8 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
                 gen_loss = (alpha * gen_loss1 + (1 - alpha) * supervisor_loss)
                 
                 
-                supervisor_loss2 = ((-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
-                    Vc], dim=1)))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+                supervisor_loss2 = ((-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z).detach(), Vc], dim=1)),\
+                    Vc], dim=1))))  + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
                 
                 # supervisor_loss2 = ((torch.mean(torch.log(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1).detach()),\
                 #     Vc], dim=1))))) + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
@@ -1151,14 +1152,15 @@ def generate_synth_time(data, client_id, time_id, model='normal', n_splits=2, op
     else:
         print('Choose the model for synthetic time generation')
 
-    splitted_synth_deltas = np.array(np.split(synth_deltas.astype('timedelta64[D]'), np.cumsum(length_dates_by_clients))[:-1])
+
+    splitted_synth_deltas = np.split(synth_deltas.astype('timedelta64[D]'), np.cumsum(length_dates_by_clients))[:-1]
     synth_dates_by_clients = list(map(list, first_dates_by_clients.reshape(-1, 1)))
 
     for i in range(len(splitted_synth_deltas)):
         for j in range(len(splitted_synth_deltas[i])):
             synth_dates_by_clients[i].append(splitted_synth_deltas[i][j] + synth_dates_by_clients[i][j])
     
-    synth_time = pd.DataFrame(np.hstack(np.array(synth_dates_by_clients)), columns=[time_id]).sort_values(by=time_id).reset_index(drop=True)
+    synth_time = pd.DataFrame(np.hstack(np.array(synth_dates_by_clients, dtype='object')), columns=[time_id]).sort_values(by=time_id).reset_index(drop=True)
 
     return synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array
 
