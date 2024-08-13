@@ -209,8 +209,8 @@ def preprocessing_date(data: pd.DataFrame, date_feature):
     min_year = np.min(data[date_feature].apply(lambda x: x.year))
     max_year = np.max(data[date_feature].apply(lambda x: x.year))
 
-    date_transformations = data[date_feature].apply(lambda x: np.array([np.cos(2*np.pi * x.day / 365),\
-                                                                 np.sin(2*np.pi * x.day / 365),\
+    date_transformations = data[date_feature].apply(lambda x: np.array([np.cos(2*np.pi * x.day / 30),\
+                                                                 np.sin(2*np.pi * x.day / 30),\
                                           np.cos(2*np.pi * x.month / 12), np.sin(2*np.pi * x.month / 12),\
                                           (x.year - min_year)/(max_year - min_year + 1e-7)])).values
     
