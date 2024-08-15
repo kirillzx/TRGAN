@@ -16,7 +16,7 @@ from scipy.stats import wasserstein_distance, entropy
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 from rdt.transformers.numerical import ClusterBasedNormalizer, GaussianNormalizer
-from rdt.transformers.categorical import FrequencyEncoder
+from rdt.transformers.categorical import UniformEncoder
 from typing import Union, TypeVar
 
 
@@ -33,7 +33,7 @@ def create_categorical_embeddings(data_init: pd.DataFrame, feat_names: list) -> 
     data = copy.deepcopy(data_init)
 
     for i in range(len(feat_names)):
-        enc = FrequencyEncoder()
+        enc = UniformEncoder()
         customer_enc = enc.fit_transform(data, column=feat_names[i])[feat_names[i]].values
         
         freq_enc.append(enc)
@@ -110,13 +110,15 @@ def create_numerical_embeddings(data_init, cont_features, type_scale='GaussianNo
         
         for col in cont_features:
             transformer = GaussianNormalizer(learn_rounding_scheme=True, enforce_min_max_values=True)
+            transformer.reset_randomization()
             embeddings[col] = transformer.fit_transform(data, column=[col])[col]
             gaus_tr.append(transformer)
             
         embeddings = np.array(embeddings)
         
         scaler = MinMaxScaler((-1, 1))
-        embeddings = scaler.fit_transform(embeddings)
+        embeddings = scaler.fit_transform(embeddings)    
+    
 
     else:
         print('Choose preprocessing scheme for continuous features. Available: GaussianNormalize, CBNormalize and Standardize')
@@ -144,3 +146,40 @@ def inverse_numerical_embeddings(num_embeddings: np.array, feat_names: list, sca
     emb_recovered = decoded_array.T[0]
     
     return emb_recovered
+
+
+'''
+DATE and TIME FEATURES
+'''
+
+def preprocessing_date(data: pd.DataFrame, date_feature: str) -> np.array:
+    min_year = np.min(data[date_feature].apply(lambda x: x.year))
+    max_year = np.max(data[date_feature].apply(lambda x: x.year))
+
+    date_transformations = data[date_feature].apply(lambda x: np.array([np.cos(2*np.pi * x.day / 30),\
+                                                                 np.sin(2*np.pi * x.day / 30),\
+                                          np.cos(2*np.pi * x.month / 12), np.sin(2*np.pi * x.month / 12),\
+                                          (x.year - min_year)/(max_year - min_year + 1e-7)])).values
+    
+    date_transformations = np.vstack(date_transformations)
+    # date_transformations = date_transformations[:,:-1] #временно пока не придумаем что делать с годом
+
+    return date_transformations
+
+
+def preprocessing_time(data: pd.DataFrame, time_feature: str) -> np.array:
+
+    time_transformations = data[time_feature].apply(lambda x: np.array([np.cos(2*np.pi * x.hour / 24),\
+                                                                        np.sin(2*np.pi * x.hour / 24),\
+                                                                        np.cos(2*np.pi * x.minute / 60),\
+                                                                        np.sin(2*np.pi * x.minute / 60),\
+                                                                        np.cos(2*np.pi * x.second / 60),\
+                                                                        np.sin(2*np.pi * x.second / 60)])).values
+    
+    time_transformations = np.vstack(time_transformations)
+
+    return time_transformations
+
+
+# def convert_to_seconds(time):
+#     return time.dt.hour * 60*60 + time.dt.minute * 60 + time.dt.second
