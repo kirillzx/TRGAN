@@ -129,9 +129,18 @@ def preprocessing_cont(X, cont_features, type_scale='Autoencoder', max_clusters=
     elif type_scale == 'Autoencoder':
         scaler = []
         
-        scaler_cont = GaussianNormalizer(enforce_min_max_values=True, learn_rounding_scheme=True)
-        scaler_cont.reset_randomization()
-        data[cont_features] = scaler_cont.fit_transform(data[cont_features], column=cont_features)
+        gaus_tr = []
+        
+        for col in cont_features:
+            scaler_cont = GaussianNormalizer(learn_rounding_scheme=True, enforce_min_max_values=True)
+            scaler_cont.reset_randomization()
+            data[col] = scaler_cont.fit_transform(data, column=[col])[col]
+            gaus_tr.append(scaler_cont)
+            
+        
+        # scaler_cont = GaussianNormalizer(enforce_min_max_values=True, learn_rounding_scheme=True)
+        # scaler_cont.reset_randomization()
+        # data[cont_features] = scaler_cont.fit_transform(data[cont_features], column=cont_features)
 
         scaler_cont2 = MinMaxScaler((-1, 1))
         data[cont_features] = scaler_cont2.fit_transform(data[cont_features])
@@ -159,8 +168,8 @@ def preprocessing_cont(X, cont_features, type_scale='Autoencoder', max_clusters=
 
         print(f'E_cont with {eps, delta}-Differential Privacy')
 
-        for epoch in epochs:
-            for batch_idx, X in enumerate(loader_cont_emb):
+        for _ in epochs:
+            for _, X in enumerate(loader_cont_emb):
                 loss = torch.nn.MSELoss()
 
                 H = encoder_cont_emb(X.float().to(device))
@@ -189,7 +198,7 @@ def preprocessing_cont(X, cont_features, type_scale='Autoencoder', max_clusters=
 
         scaler.append(decoder_cont_emb)
         scaler.append(scaler_cont2)
-        scaler.append(scaler_cont)
+        scaler.append(gaus_tr)
         scaler.append(encoder_cont_emb)
 
     else:
@@ -795,8 +804,8 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
 
             Vc = X[:, -dim_Vc:].to(device)
             
-            # noise = torch.randn(batch_size, dim_noise).to(device)
-            noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
+            noise = torch.randn(batch_size, dim_noise).to(device)
+            # noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
             z = torch.cat([noise, Vc], dim=1).to(device)
             
             fake = torch.nan_to_num(generator(z))
@@ -804,10 +813,12 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             
             discriminator.trainable = True
             
-            disc_loss = (-torch.mean(torch.nan_to_num(discriminator(X))) + torch.mean(torch.nan_to_num(discriminator(torch.cat([fake, Vc], dim=1))))).to(device)
+            disc_loss = (-torch.mean(torch.nan_to_num(discriminator(X))) + torch.mean(torch.nan_to_num(discriminator(torch.cat([fake, Vc], dim=1))))).to(device) +\
+                grad_penalty(discriminator, X, torch.cat([fake, Vc], dim=1), device)
      
             fake_super = supervisor(torch.cat([fake.detach(), Vc], dim=1)).to(device)
-            disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) 
+            disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) +\
+                grad_penalty(discriminator2, X, torch.cat([fake_super, Vc], dim=1), device)
 
             optimizer_D.zero_grad()
             disc_loss.backward()
@@ -1026,8 +1037,15 @@ def inverse_transforms(n_samples, synth_data, synth_time, client_info, cont_feat
         synth_cont_feat = synth_data_scaled[:,:dim_X_cont]
         synth_cont_feat = (scaler_cont[0](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
         synth_cont_feat = scaler_cont[1].inverse_transform(synth_cont_feat)
-        scaler_cont[2].reset_randomization()
-        synth_cont_feat = scaler_cont[2].reverse_transform(pd.DataFrame(synth_cont_feat, columns=cont_features))
+        
+        decoded_array = []
+        for i in range(len(cont_features)):
+            scaler_cont[2][i].reset_randomization()
+            temp = scaler_cont[2][i].reverse_transform(pd.DataFrame(synth_cont_feat[:, i], columns=[cont_features[i]]))
+            decoded_array.append(temp.values)
+        
+        synth_cont_feat = decoded_array
+        # synth_cont_feat = scaler_cont[2].reverse_transform(pd.DataFrame(synth_cont_feat, columns=cont_features))
 
     else:
         print('Incorrect preprocessing type for continuous features')
