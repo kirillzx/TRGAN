@@ -15,8 +15,7 @@ from scipy.optimize import minimize
 from scipy.stats import wasserstein_distance, entropy
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
-from rdt.transformers.numerical import ClusterBasedNormalizer, GaussianNormalizer
-from rdt.transformers.categorical import FrequencyEncoder
+from rdt.transformers.numerical import GaussianNormalizer
 from scipy import signal
 from functorch import vmap
 
@@ -28,12 +27,12 @@ from TRGAN.TRGAN_light_preprocessing import *
 ONEHOT FEATURES (small numbers of the unique categories)
 '''
 
-def onehot_emb_categorical(data: pd.DataFrame, cat_features):
+def create_onehot(data: pd.DataFrame, cat_features):
     data_cat_onehot = pd.get_dummies(data[cat_features], columns=cat_features)
     return data_cat_onehot
 
 
-def create_onehot_embeddings(data: pd.DataFrame, latent_dim, lr=1e-3, epochs=20, batch_size=2**8, device='cpu'):
+def encode_onehot_embeddings(data: pd.DataFrame, latent_dim, lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
     dim_onehot = len(data.columns)
 
     encoder_onehot = Encoder_onehot(dim_onehot, latent_dim).to(device)
@@ -91,7 +90,7 @@ def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, decoder_o
 '''
 CONTINUOUS FEATURES
 '''
-def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=30, lr=0.001, bs=2**8, latent_dim=3, device='cpu'):
+def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=100, lr=0.001, bs=2**8, latent_dim=3, device='cpu'):
     data = copy.deepcopy(X)
     processing_dict = dict()
 
@@ -203,29 +202,29 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
     
     return pd.DataFrame(synth_cont_feat, columns=feat_names)
 
-'''
-DATE FEATURES
-'''
+# '''
+# DATE FEATURES
+# '''
 
-def preprocessing_date(data: pd.DataFrame, date_feature):
-    min_year = np.min(data[date_feature].apply(lambda x: x.year))
-    max_year = np.max(data[date_feature].apply(lambda x: x.year))
+# def preprocessing_date(data: pd.DataFrame, date_feature: str) -> np.array:
+#     min_year = np.min(data[date_feature].apply(lambda x: x.year))
+#     max_year = np.max(data[date_feature].apply(lambda x: x.year))
 
-    date_transformations = data[date_feature].apply(lambda x: np.array([np.cos(2*np.pi * x.day / 30),\
-                                                                 np.sin(2*np.pi * x.day / 30),\
-                                          np.cos(2*np.pi * x.month / 12), np.sin(2*np.pi * x.month / 12),\
-                                          (x.year - min_year)/(max_year - min_year + 1e-7)])).values
+#     date_transformations = data[date_feature].apply(lambda x: np.array([np.cos(2*np.pi * x.day / 30),\
+#                                                                  np.sin(2*np.pi * x.day / 30),\
+#                                           np.cos(2*np.pi * x.month / 12), np.sin(2*np.pi * x.month / 12),\
+#                                           (x.year - min_year)/(max_year - min_year + 1e-7)])).values
     
-    date_transformations = np.vstack(date_transformations)
-    date_transformations = date_transformations[:,:-1] #временно пока не придумаем что делать с годом
+#     date_transformations = np.vstack(date_transformations)
+#     # date_transformations = date_transformations[:,:-1] #временно пока не придумаем что делать с годом
 
-    return date_transformations
+#     return date_transformations
 
 '''
 CATEGORICAL FEATURES
 '''
 
-def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, lr=1e-3, epochs=20, batch_size=2**8, device='cpu'):
+def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
     
     categorical_emb, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
 
@@ -277,97 +276,80 @@ def decode_categorical_embeddings(embeddings: np.array, cat_feat_names, decoder,
 '''
 CREATE EMBEDDINGS AND CONDITIONAL VECTOR
 '''
+def create_embeddings(onehot_emb: np.array, categorical_emb: np.array, numerical_emb: np.array) -> np.array:
+    embedding = np.concatenate([onehot_emb, categorical_emb, numerical_emb], axis=1)
 
-def create_embeddings(X_cont, X_oh_emb, X_cl):
-    data_transformed = np.concatenate([X_cont, X_oh_emb], axis=1)
-    scaler = MinMaxScaler((-1, 1))
-
-    data_transformed = scaler.fit_transform(data_transformed)
-
-    data_transformed = np.concatenate([X_cl, data_transformed], axis=1)
-
-    return data_transformed, scaler
+    return embedding
 
 
-def create_cond_vector(data, X_emb, date_feature, time, dim_Vc_h, dim_q, name_client_id,\
-                    name_agg_feature, lr=1e-3, epochs=20, batch_size = 2**8, model_time='poisson',\
-                    n_splits=2, opt_time=True, xi_array=[], q_array=[], device='cpu', eps=0.5):
+def create_cond_vector(data: pd.DataFrame, X_emb: np.array, date_feature: str, name_client_id: str, time_type: str, latent_dim: int=4,\
+                    lr:float=1e-3, epochs:int=20, batch_size:int=2**8, model_time:str='poisson',\
+                    n_splits:int=2, opt_time:bool=True, xi_array:list=[], q_array:list=[], device:str='cpu'):
 
-    if time == 'synth':
-        data_synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = generate_synth_time(data,\
-                                        name_client_id, date_feature[0], model_time, n_splits, opt_time, xi_array, q_array)
-        date_transformations = preprocessing_date(data_synth_time, date_feature[0])
+    if time_type == 'synth':
+        synth_time, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array = generate_synth_time(data,\
+                                        name_client_id, date_feature, model_time, n_splits, opt_time, xi_array, q_array)
+        
+        date_transform = preprocessing_date(synth_time, date_feature)
 
-    elif time == 'initial':
-        data_synth_time = data[date_feature]
-        date_transformations = preprocessing_date(data, date_feature[0])
-        deltas_by_clients = 'Only when time="synth"'
-        synth_deltas_by_clients = 'Only when time="synth"'
+    elif time_type == 'initial':
+        synth_time = data[date_feature]
+        date_transform = preprocessing_date(data, date_feature)
+        deltas_by_clients = 'Only when time_type="synth"'
+        synth_deltas_by_clients = 'Only when time_type="synth"'
         xiP_array = []
         idx_array = []
 
     else:
-        print('Choose time generation type')
+        print('Choose time type generation type')
 
-    # behaviour_cl_enc = behaviour_encoding(data.reset_index(), dim_q, name_client_id, name_agg_feature)
-    # scaler_behaviour_cl_enc = MinMaxScaler()
-    # behaviour_cl_enc = scaler_behaviour_cl_enc.fit_transform(behaviour_cl_enc)
-    
-    behaviour_cl_enc = ['', '']
-
-
-    hidden_dim = dim_Vc_h
     data_dim = len(X_emb[0])
 
-    encoder = Encoder(data_dim, hidden_dim).to(device)
-    decoder = Decoder(hidden_dim, data_dim).to(device)
+    encoder = Encoder(data_dim, latent_dim).to(device)
+    decoder = Decoder(latent_dim, data_dim).to(device)
 
     optimizer_Enc = optim.Adam(encoder.parameters(), lr)
     optimizer_Dec = optim.Adam(decoder.parameters(), lr)
 
-    #privacy parameters
-    q = batch_size / len(X_emb)
-    alpha = 2
-    delta = 0.1 #or 1/batch_size
-    n_iter = len(X_emb) // batch_size
-    sensitivity = 4/batch_size
-    std = np.sqrt((4 * q * alpha**2 * (sensitivity)**2 * np.sqrt(2 * n_iter * np.log(1/delta))) / (2 * (alpha-1) * eps))
-
-    print(f'E_cv with {eps, delta}-Differential Privacy')
-
     loader = DataLoader(torch.FloatTensor(X_emb), batch_size=batch_size, shuffle=True)
 
     epochs = tqdm(range(epochs))
+    loss = torch.nn.MSELoss()
 
-    for epoch in epochs:
-        for batch_idx, X in enumerate(loader):
-            loss = torch.nn.MSELoss()
+    for _ in epochs:
+        for _, X in enumerate(loader):
 
             H = encoder(X.float().to(device))
             X_tilde = decoder(H.to(device))
             
             loss_mse = loss(X.float().to(device), X_tilde).to(device)
-            # criterion = loss_mse + np.random.laplace(loc=0, scale=4*c**2 / epsilon)
-            criterion = (loss_mse + np.random.normal(0, std)).to(device)
             
             optimizer_Enc.zero_grad()
             optimizer_Dec.zero_grad()
             
-            criterion.backward()
+            loss_mse.backward()
         
             optimizer_Enc.step()
             optimizer_Dec.step()
 
-        epochs.set_description('Loss E_cv: %.9f || Privacy Loss E_cv: %.9f' % (loss_mse.item(), criterion.item()))
+        epochs.set_description('Loss E_cv: %.9f'  % (loss_mse.item()))
 
     data_encode = encoder(torch.FloatTensor(X_emb).to(device)).detach().cpu().numpy()
     
-    # cond_vector = np.concatenate([data_encode, date_transformations, behaviour_cl_enc], axis=1)
-    cond_vector = np.concatenate([data_encode, date_transformations], axis=1)
+    cond_vector = np.concatenate([data_encode, date_transform], axis=1)
 
-    return cond_vector, data_synth_time, date_transformations, behaviour_cl_enc, encoder,\
-            deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array 
+    return cond_vector, synth_time, date_transform, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array 
 
+
+
+def inverse_transform(synth_data:np.array, latent_dim_onehot:int, latent_dim_cat:int, latent_dim_num:int) -> pd.DataFrame:
+    synth_df_onehot = decode_onehot_embeddings(synth_data[:, :latent_dim_onehot], X_oh.columns, decoder_onehot, mcc_name)
+    synth_df_cat = decode_categorical_embeddings(synth_data[:, latent_dim_onehot:latent_dim_onehot+latent_dim_cat], cat_feat_names, decoder_cat, scaler_cat, freq_enc)
+    synth_df_num = decode_continuous_embeddings(synth_data[:, -latent_dim_num:], num_feat_names, scaler_num)
+    
+    synth_df = pd.concat([synth_df_onehot, synth_df_cat, synth_df_num], axis=1)
+    
+    return synth_df
 
 
 '''
@@ -737,10 +719,10 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
     optimizer_S = optim.Adam(supervisor.parameters(), lr=lr_rates[2], betas=(0.9, 0.999), amsgrad=True)
     optimizer_D2 = optim.Adam(discriminator2.parameters(), lr=lr_rates[3], betas=(0.9, 0.999), amsgrad=True)
 
-    scheduler_G = torch.optim.lr_scheduler.ExponentialLR(optimizer_G, gamma=0.97)
-    scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer_D, gamma=0.97)
-    scheduler_S = torch.optim.lr_scheduler.ExponentialLR(optimizer_S, gamma=0.97)
-    scheduler_D2 = torch.optim.lr_scheduler.ExponentialLR(optimizer_D2, gamma=0.97)
+    # scheduler_G = torch.optim.lr_scheduler.ExponentialLR(optimizer_G, gamma=0.97)
+    # scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer_D, gamma=0.97)
+    # scheduler_S = torch.optim.lr_scheduler.ExponentialLR(optimizer_S, gamma=0.97)
+    # scheduler_D2 = torch.optim.lr_scheduler.ExponentialLR(optimizer_D2, gamma=0.97)
 
     data_with_cv = torch.cat([torch.FloatTensor(X_emb), torch.FloatTensor(cond_vector)], axis=1)
 
@@ -758,15 +740,15 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
     b_d1 = 0.02
     b_d2 = 0.02
 
-    for epoch in epochs:
+    for _ in epochs:
         for batch_idx, X in enumerate(loader_g):
             loss = torch.nn.MSELoss()
             batch_size = X.size(0)
 
             Vc = X[:, -dim_Vc:].to(device)
             
-            noise = torch.randn(batch_size, dim_noise).to(device)
-            # noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
+            # noise = torch.randn(batch_size, dim_noise).to(device)
+            noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
             z = torch.cat([noise, Vc], dim=1).to(device)
             
             fake = torch.nan_to_num(generator(z))
@@ -774,12 +756,12 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             
             discriminator.trainable = True
             
-            disc_loss = (-torch.mean(torch.nan_to_num(discriminator(X))) + torch.mean(torch.nan_to_num(discriminator(torch.cat([fake, Vc], dim=1))))).to(device) 
-                # grad_penalty(discriminator, X, torch.cat([fake, Vc], dim=1), device)
+            disc_loss = (-torch.mean(torch.nan_to_num(discriminator(X))) + torch.mean(torch.nan_to_num(discriminator(torch.cat([fake, Vc], dim=1))))).to(device) +\
+                grad_penalty(discriminator, X, torch.cat([fake, Vc], dim=1), device)
      
             fake_super = supervisor(torch.cat([fake.detach(), Vc], dim=1)).to(device)
-            disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) 
-                # grad_penalty(discriminator2, X, torch.cat([fake_super, Vc], dim=1), device)
+            disc2_loss = (-torch.mean(discriminator2(X)) + torch.mean(discriminator2(torch.cat([fake_super, Vc], dim=1)))).to(device) +\
+                grad_penalty(discriminator2, X, torch.cat([fake_super, Vc], dim=1), device)
 
             optimizer_D.zero_grad()
             disc_loss.backward()
@@ -789,11 +771,11 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise=5, batch_si
             disc2_loss.backward()
             optimizer_D2.step()
 
-            for dp in discriminator.parameters():
-                        dp.data.clamp_(-b_d1, b_d1)
+            # for dp in discriminator.parameters():
+            #             dp.data.clamp_(-b_d1, b_d1)
 
-            for dp in discriminator2.parameters():
-                        dp.data.clamp_(-b_d2, b_d2)
+            # for dp in discriminator2.parameters():
+            #             dp.data.clamp_(-b_d2, b_d2)
 
                     
             if batch_idx % 3 == 0:

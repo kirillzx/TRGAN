@@ -148,11 +148,11 @@ class Encoder(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(self.data_dim, 2**6),
             nn.ReLU(),
-            nn.Linear(2**6, 2**8),
+            nn.Linear(2**6, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**8),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**7),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
             nn.Linear(2**7, self.hidden_dim),
             nn.Tanh()
@@ -172,11 +172,11 @@ class Decoder(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(self.hidden_dim, 2**6),
             nn.ReLU(),
-            nn.Linear(2**6, 2**8),
+            nn.Linear(2**6, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**8),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**7),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
             nn.Linear(2**7, self.data_dim),
             nn.Tanh()
