@@ -90,6 +90,7 @@ class Decoder_onehot(nn.Module):
         out = self.model(x)
         return out
     
+    
 class Encoder_client_emb(nn.Module):
     def __init__(self, data_dim, hidden_dim):
         super(Encoder_client_emb, self).__init__()
@@ -100,11 +101,11 @@ class Encoder_client_emb(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(self.data_dim, 2**6),
             nn.ReLU(),
-            nn.Linear(2**6, 2**8),
+            nn.Linear(2**6, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**8),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**7),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
             nn.Linear(2**7, self.hidden_dim),
             nn.Tanh()
@@ -124,11 +125,11 @@ class Decoder_client_emb(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(self.hidden_dim, 2**6),
             nn.ReLU(),
-            nn.Linear(2**6, 2**8),
+            nn.Linear(2**6, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**8),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
-            nn.Linear(2**8, 2**7),
+            nn.Linear(2**7, 2**7),
             nn.ReLU(),
             nn.Linear(2**7, self.data_dim),
             nn.Tanh()
@@ -212,13 +213,17 @@ class Encoder_cont_emb(nn.Module):
 
         self.model = nn.Sequential(
             nn.Linear(self.data_dim, 2**6),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**6, 2**7),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**7, 2**7),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**7, 2**7),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**7, self.hidden_dim),
             nn.Tanh()
         )
@@ -252,13 +257,17 @@ class Decoder_cont_emb(nn.Module):
 
         self.model = nn.Sequential(
             nn.Linear(self.hidden_dim, 2**6),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**6, 2**7),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**7, 2**7),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**7, 2**7),
-            nn.LeakyReLU(0.02),
+            # nn.LeakyReLU(0.02),
+            nn.ReLU(),
             nn.Linear(2**7, self.data_dim),
             nn.Tanh()
         )

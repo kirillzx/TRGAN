@@ -90,7 +90,7 @@ def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, decoder_o
 '''
 CONTINUOUS FEATURES
 '''
-def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=100, lr=0.001, bs=2**8, latent_dim=3, device='cpu'):
+def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=100, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
     data = copy.deepcopy(X)
     processing_dict = dict()
 
@@ -130,11 +130,10 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
         loader_cont_emb = DataLoader(torch.FloatTensor(data[feat_names].values), bs, shuffle=True)
 
         epochs = tqdm(range(epochs))
-
+        loss = torch.nn.HuberLoss()
 
         for _ in epochs:
             for _, X in enumerate(loader_cont_emb):
-                loss = torch.nn.MSELoss()
 
                 H = encoder_cont_emb(X.float().to(device))
                 X_tilde = decoder_cont_emb(H.to(device))
@@ -224,52 +223,73 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
 CATEGORICAL FEATURES
 '''
 
-def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
+def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Autoencoder',
+                                  lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
     
-    categorical_emb, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
+    if enc_type == 'Frequency':
+        embeddings, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
+        encoder, decoder = '', ''
+        
+    elif enc_type == 'Autoencoder':
+        categorical_emb, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
 
 
-    encoder = Encoder_client_emb(categorical_emb.shape[1], latent_dim).to(device)
-    decoder = Decoder_client_emb(latent_dim, categorical_emb.shape[1]).to(device)
+        encoder = Encoder_client_emb(categorical_emb.shape[1], latent_dim).to(device)
+        decoder = Decoder_client_emb(latent_dim, categorical_emb.shape[1]).to(device)
 
-    optimizer_Enc_cl_emb = optim.Adam(encoder.parameters(), lr)
-    optimizer_Dec_cl_emb = optim.Adam(decoder.parameters(), lr)
+        optimizer_Enc = optim.Adam(encoder.parameters(), lr)
+        optimizer_Dec = optim.Adam(decoder.parameters(), lr)
+        
+        scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc, gamma=0.98)
+        scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec, gamma=0.98)
 
+        loader_cl_emb = DataLoader(torch.FloatTensor(categorical_emb), batch_size, shuffle=True)
 
-    loader_cl_emb = DataLoader(torch.FloatTensor(categorical_emb), batch_size, shuffle=True)
+        epochs = tqdm(range(epochs))
+        loss = torch.nn.MSELoss()
 
-    epochs = tqdm(range(epochs))
-    loss = torch.nn.MSELoss()
+        for _ in epochs:
+            for _, X in enumerate(loader_cl_emb):
 
-    for _ in epochs:
-        for _, X in enumerate(loader_cl_emb):
-
-            H = encoder(X.float().to(device))
-            X_tilde = decoder(H.to(device))
+                H = encoder(X.float().to(device))
+                X_tilde = decoder(H.to(device))
+                
+                loss_mse = loss(X.float().to(device), X_tilde).to(device)
+                
+                optimizer_Enc.zero_grad()
+                optimizer_Dec.zero_grad()
+                
+                loss_mse.backward()
+                
+                optimizer_Enc.step()
+                optimizer_Dec.step()
             
-            loss_mse = loss(X.float().to(device), X_tilde).to(device)
-            
-            optimizer_Enc_cl_emb.zero_grad()
-            optimizer_Dec_cl_emb.zero_grad()
-            
-            loss_mse.backward()
-            
-            optimizer_Enc_cl_emb.step()
-            optimizer_Dec_cl_emb.step()
+            scheduler_Enc.step()
+            scheduler_Dec.step()
 
-        epochs.set_description(f'Loss E_cl: {loss_mse.item()}')
+            epochs.set_description(f'Loss E_cl: {loss_mse.item()}')
 
-    embeddings = encoder(torch.FloatTensor(categorical_emb).to(device)).detach().cpu().numpy()
+        embeddings = encoder(torch.FloatTensor(categorical_emb).to(device)).detach().cpu().numpy()
+        
+    else:
+        print('Choose encoding type')
 
     return embeddings, encoder, decoder, scaler_cl, freq_enc
 
 
-def decode_categorical_embeddings(embeddings: np.array, cat_feat_names, decoder, scaler_cl, freq_enc, device='cpu'):
-    synth_data_scaled_cl = decoder(torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
+def decode_categorical_embeddings(embeddings: np.array, cat_feat_names, decoder, scaler_cl, freq_enc,
+                                  enc_type:str = 'Autoencoder', device='cpu'):
     
-    dec_array = inverse_categorical_embeddings(synth_data_scaled_cl, cat_feat_names, scaler_cl, freq_enc)
-    df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
-    
+    if enc_type == 'Frequency':
+        dec_array = inverse_categorical_embeddings(embeddings, cat_feat_names, scaler_cl, freq_enc)
+        df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
+        
+    elif enc_type == 'Autoencoder':
+        synth_data_scaled_cl = decoder(torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
+        
+        dec_array = inverse_categorical_embeddings(synth_data_scaled_cl, cat_feat_names, scaler_cl, freq_enc)
+        df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
+        
     return df_cat
     
 

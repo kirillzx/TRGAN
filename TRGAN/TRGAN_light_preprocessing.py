@@ -52,9 +52,7 @@ def create_categorical_embeddings(data_init: pd.DataFrame, feat_names: list) -> 
 
 def inverse_categorical_embeddings(cat_embeddings: np.array, feat_names: list, scaler, freq_enc: list) -> np.array:
     emb_recovered = scaler.inverse_transform(cat_embeddings)
-    # synth_data_scaled_cl = synth_data_scaled_cl.astype(int)
-    # synth_data_scaled_cl = np.where(synth_data_scaled_cl < 0, 0, synth_data_scaled_cl)
-
+  
     decoded_array = []
     for i in range(len(feat_names)):
         temp = freq_enc[i].reverse_transform(pd.DataFrame(emb_recovered[:, i], columns=[feat_names[i]]))
