@@ -25,6 +25,50 @@ def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, 
         
     return X_emb, X_oh, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params
     
+    
+def train(X_emb, cond_vector, latent_dim, dim_noise=15, epochs=40, experiment_id='TRGAN_V2_1',
+          DIRECTORY='Pretrained_model/', DEVICE='cpu', load=False):
+    
+    dim_X_emb = latent_dim['onehot'] + latent_dim['categorical'] + latent_dim['numerical']
+    dim_Vc = latent_dim['cv'] + 5
+    h_dim = 2**6
+    num_blocks_gen = 1
+    num_blocks_dis = 1
+
+    if load:
+        generator = Generator(dim_noise + dim_Vc, dim_X_emb, h_dim, num_blocks_gen).to(DEVICE)
+        supervisor = Supervisor(dim_X_emb + dim_Vc, dim_X_emb, h_dim, num_blocks_gen).to(DEVICE)
+
+        generator.load_state_dict(torch.load(f'{DIRECTORY}TRGAN_generator_exp_{experiment_id}.pt', map_location=DEVICE, weights_only=True))
+        supervisor.load_state_dict(torch.load(f'{DIRECTORY}TRGAN_supervisor_exp_{experiment_id}.pt', map_location=DEVICE, weights_only=True))
+
+        generator.eval()
+        supervisor.eval()
+
+        loss_array = np.load(f'{DIRECTORY}loss_array_exp_{experiment_id}.npy')
+
+    else:
+        generator, supervisor, loss_array, discriminator, discriminator2 = train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise,\
+                                        batch_size=2**9, lr_rates=[3e-4, 3e-4, 3e-4, 3e-4], num_epochs=epochs, num_blocks_gen=num_blocks_gen,\
+                                        num_blocks_dis=num_blocks_dis, h_dim=h_dim, lambda1=3, alpha=0.7, device=DEVICE)
+        
+        torch.save(generator.state_dict(), f'{DIRECTORY}TRGAN_generator_exp_{experiment_id}.pt')
+        torch.save(supervisor.state_dict(), f'{DIRECTORY}TRGAN_supervisor_exp_{experiment_id}.pt')
+
+        np.save(f'{DIRECTORY}loss_array_exp_{experiment_id}.npy', loss_array)
+
+        generator.eval()
+        supervisor.eval()
+        
+    return generator, supervisor, loss_array 
+
+
+# def sample(n_samples):
+#     synth_data, synth_date, params = sample(n_samples, generator, supervisor, dim_noise, cond_vector, X_emb, cv_params['encoder'], data,\
+#                                     date_feature, client_id, cv_params=cv_params, device=DEVICE)
+
+#     synth_df = inverse_transform(synth_data, latent_dim, X_oh.columns, scaler_onehot, scaler_cat, scaler_num, cat_feat_names,
+#                                 mcc_name, num_feat_names, True, synth_date, 'TRANS_TIME')
 
 
 def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=False,\
