@@ -1,9 +1,31 @@
 import numpy as np
 import torch
 import joblib
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 from TRGAN.encoders import *
-from TRGAN.TRGAN_main import *
+from TRGAN.TRGAN_main_V2 import *
+
+
+def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, client_id, latent_dim):
+    # categorical embeddings
+    categorical_emb, scaler_cat = encode_categorical_embeddings(data, cat_feat_names, latent_dim=latent_dim['categorical'])
+    
+    # onehot embeddings
+    X_oh = create_onehot(data, onehot_cols)
+    onehot_emb, scaler_onehot = encode_onehot_embeddings(X_oh, latent_dim['onehot'])
+    
+    # numerical embeddings
+    numerical_emb, scaler_num = encode_continuous_embeddings(data, num_feat_names, latent_dim=latent_dim['numerical'])
+    
+    # join embeddings
+    X_emb = create_embeddings(onehot_emb, categorical_emb, numerical_emb)
+    
+    # create conditional vector and synth date
+    cond_vector, synth_date, cv_params = \
+        create_cond_vector(data, X_emb, date_feature, client_id, time_type='synth', latent_dim=latent_dim['cv'], opt_time=True)
+        
+    return X_emb, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params
+    
+
 
 def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=False,\
                    directory='Pretrained_model/', names=['TRGAN_E_oh.pkl', 'TRGAN_D_oh.pkl', 'X_oh_emb.npy'], device='cpu', eps=2):

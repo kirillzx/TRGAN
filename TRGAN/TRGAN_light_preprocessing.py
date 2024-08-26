@@ -181,3 +181,16 @@ def preprocessing_time(data: pd.DataFrame, time_feature: str) -> np.array:
 
 # def convert_to_seconds(time):
 #     return time.dt.hour * 60*60 + time.dt.minute * 60 + time.dt.second
+
+
+def log1p_transform(data: pd.DataFrame, cols: list) -> pd.DataFrame:
+    data = copy.deepcopy(data)
+    data[cols] = np.log1p(data[cols])
+    
+    return data
+
+def inverse_log1p_transform(data: pd.DataFrame, cols: list) -> pd.DataFrame:
+    data = copy.deepcopy(data)
+    data[cols] = np.exp(data[cols]) - 1
+    
+    return data

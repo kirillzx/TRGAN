@@ -75,12 +75,14 @@ def encode_onehot_embeddings(data: pd.DataFrame, latent_dim, lr=1e-3, epochs=100
     decoder_onehot.eval()
 
     data_cat_encode = encoder_onehot(torch.FloatTensor(data.values).to(device)).detach().cpu().numpy()
+    
+    scaler_onehot = {'encoder': encoder_onehot, 'decoder': decoder_onehot}
 
-    return data_cat_encode, encoder_onehot, decoder_onehot
+    return data_cat_encode, scaler_onehot
 
 
-def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, decoder_onehot, mcc_name: str) -> pd.DataFrame:
-    onehot_decoded = np.abs(np.around(decoder_onehot(torch.FloatTensor(onehot_embeddings).to('cpu')).detach().cpu().numpy())).astype(int)
+def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, scaler_onehot, mcc_name: str) -> pd.DataFrame:
+    onehot_decoded = np.abs(np.around(scaler_onehot['decoder'](torch.FloatTensor(onehot_embeddings).to('cpu')).detach().cpu().numpy())).astype(int)
     df_onehot = pd.DataFrame(onehot_decoded, columns = onehot_cols)
     df_onehot = undummify(df_onehot, prefix_sep="_")
     df_onehot[mcc_name] = df_onehot[mcc_name].astype(int).astype(str)
@@ -130,7 +132,8 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
         loader_cont_emb = DataLoader(torch.FloatTensor(data[feat_names].values), bs, shuffle=True)
 
         epochs = tqdm(range(epochs))
-        loss = torch.nn.HuberLoss()
+        # loss = torch.nn.HuberLoss()
+        loss = torch.nn.MSELoss()
 
         for _ in epochs:
             for _, X in enumerate(loader_cont_emb):
@@ -225,10 +228,14 @@ CATEGORICAL FEATURES
 
 def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Autoencoder',
                                   lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
+    scaler_cat = {}
     
     if enc_type == 'Frequency':
         embeddings, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
-        encoder, decoder = '', ''
+        scaler_cat['encoder'] = ''
+        scaler_cat['decoder'] = ''
+        scaler_cat['scaler'] = scaler_cl
+        scaler_cat['freq_encoder'] = freq_enc
         
     elif enc_type == 'Autoencoder':
         categorical_emb, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
@@ -271,23 +278,27 @@ def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim
 
         embeddings = encoder(torch.FloatTensor(categorical_emb).to(device)).detach().cpu().numpy()
         
+        scaler_cat['encoder'] = encoder
+        scaler_cat['decoder'] = decoder
+        scaler_cat['scaler'] = scaler_cl
+        scaler_cat['freq_encoder'] = freq_enc
+        
     else:
         print('Choose encoding type')
 
-    return embeddings, encoder, decoder, scaler_cl, freq_enc
+    return embeddings, scaler_cat
 
 
-def decode_categorical_embeddings(embeddings: np.array, cat_feat_names, decoder, scaler_cl, freq_enc,
-                                  enc_type:str = 'Autoencoder', device='cpu'):
+def decode_categorical_embeddings(embeddings: np.array, cat_feat_names: list, scaler_cat: dict, enc_type:str = 'Autoencoder', device='cpu'):
     
     if enc_type == 'Frequency':
-        dec_array = inverse_categorical_embeddings(embeddings, cat_feat_names, scaler_cl, freq_enc)
+        dec_array = inverse_categorical_embeddings(embeddings, cat_feat_names, scaler_cat['scaler'], scaler_cat['freq_encoder'])
         df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
         
     elif enc_type == 'Autoencoder':
-        synth_data_scaled_cl = decoder(torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
+        synth_data_scaled_cl = scaler_cat['decoder'](torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
         
-        dec_array = inverse_categorical_embeddings(synth_data_scaled_cl, cat_feat_names, scaler_cl, freq_enc)
+        dec_array = inverse_categorical_embeddings(synth_data_scaled_cl, cat_feat_names, scaler_cat['scaler'], scaler_cat['freq_encoder'])
         df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
         
     return df_cat
@@ -302,7 +313,7 @@ def create_embeddings(onehot_emb: np.array, categorical_emb: np.array, numerical
     return embedding
 
 
-def create_cond_vector(data: pd.DataFrame, X_emb: np.array, date_feature: str, name_client_id: str, time_type: str, latent_dim: int=4,\
+def create_cond_vector(data: pd.DataFrame, X_emb: np.array, date_feature: str, name_client_id: str, time_type: str='synth', latent_dim: int=4,\
                     lr:float=1e-3, epochs:int=20, batch_size:int=2**8, model_time:str='poisson',\
                     n_splits:int=2, opt_time:bool=True, xi_array:list=[], q_array:list=[], device:str='cpu'):
 
@@ -357,8 +368,11 @@ def create_cond_vector(data: pd.DataFrame, X_emb: np.array, date_feature: str, n
     data_encode = encoder(torch.FloatTensor(X_emb).to(device)).detach().cpu().numpy()
     
     cond_vector = np.concatenate([data_encode, date_transform], axis=1)
+    
+    cv_params = {'date_transform': date_transform, 'encoder': encoder, 'deltas_real': deltas_by_clients,
+                 'deltas_synth': synth_deltas_by_clients, 'xiP': xiP_array, 'quantile_index': idx_array}
 
-    return cond_vector, synth_time, date_transform, encoder, deltas_by_clients, synth_deltas_by_clients, xiP_array, idx_array 
+    return cond_vector, synth_time, cv_params
 
 
 
