@@ -5,25 +5,25 @@ from TRGAN.encoders import *
 from TRGAN.TRGAN_main_V2 import *
 
 
-def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, client_id, latent_dim):
+def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, client_id, latent_dim, device:str = 'cpu', epochs: int = 100):
     # categorical embeddings
-    categorical_emb, scaler_cat = encode_categorical_embeddings(data, cat_feat_names, latent_dim=latent_dim['categorical'])
+    categorical_emb, scaler_cat = encode_categorical_embeddings(data, cat_feat_names, latent_dim=latent_dim['categorical'], device=device, epochs=epochs)
     
     # onehot embeddings
     X_oh = create_onehot(data, onehot_cols)
-    onehot_emb, scaler_onehot = encode_onehot_embeddings(X_oh, latent_dim['onehot'])
+    onehot_emb, scaler_onehot = encode_onehot_embeddings(X_oh, latent_dim['onehot'], device=device, epochs=epochs)
     
     # numerical embeddings
-    numerical_emb, scaler_num = encode_continuous_embeddings(data, num_feat_names, latent_dim=latent_dim['numerical'])
+    numerical_emb, scaler_num = encode_continuous_embeddings(data, num_feat_names, latent_dim=latent_dim['numerical'], device=device, epochs=epochs)
     
     # join embeddings
     X_emb = create_embeddings(onehot_emb, categorical_emb, numerical_emb)
     
     # create conditional vector and synth date
     cond_vector, synth_date, cv_params = \
-        create_cond_vector(data, X_emb, date_feature, client_id, time_type='synth', latent_dim=latent_dim['cv'], opt_time=True)
+        create_cond_vector(data, X_emb, date_feature, client_id, time_type='synth', latent_dim=latent_dim['cv'], opt_time=True, device=device)
         
-    return X_emb, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params
+    return X_emb, X_oh, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params
     
 
 
