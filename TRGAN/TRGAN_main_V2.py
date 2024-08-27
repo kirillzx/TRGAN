@@ -32,14 +32,14 @@ def create_onehot(data: pd.DataFrame, cat_features):
     return data_cat_onehot
 
 
-def encode_onehot_embeddings(data: pd.DataFrame, latent_dim, lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
+def encode_onehot_embeddings(data: pd.DataFrame, latent_dim, lr=1e-3, epochs=60, batch_size=2**8, device='cpu'):
     dim_onehot = len(data.columns)
 
     encoder_onehot = Encoder_onehot(dim_onehot, latent_dim).to(device)
     decoder_onehot = Decoder_onehot(latent_dim, dim_onehot).to(device)
 
-    optimizer_Enc = optim.Adam(encoder_onehot.parameters(), lr=lr)
-    optimizer_Dec = optim.Adam(decoder_onehot.parameters(), lr=lr)
+    optimizer_Enc = optim.AdamW(encoder_onehot.parameters(), lr=lr)
+    optimizer_Dec = optim.AdamW(decoder_onehot.parameters(), lr=lr)
 
     scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc, gamma=0.98)
     scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec, gamma=0.98)
@@ -112,7 +112,7 @@ def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, scaler_on
 '''
 CONTINUOUS FEATURES
 '''
-def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=100, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
+def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=60, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
     data = copy.deepcopy(X)
     processing_dict = dict()
 
@@ -143,8 +143,8 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
         encoder_cont_emb = Encoder_cont_emb(len(feat_names), latent_dim).to(device)
         decoder_cont_emb = Decoder_cont_emb(latent_dim, len(feat_names)).to(device)
 
-        optimizer_Enc_cont_emb = optim.Adam(encoder_cont_emb.parameters(), lr, betas=(0.9, 0.999), amsgrad=True)
-        optimizer_Dec_cont_emb = optim.Adam(decoder_cont_emb.parameters(), lr, betas=(0.9, 0.999), amsgrad=True)
+        optimizer_Enc_cont_emb = optim.AdamW(encoder_cont_emb.parameters(), lr, betas=(0.9, 0.999), amsgrad=True)
+        optimizer_Dec_cont_emb = optim.AdamW(decoder_cont_emb.parameters(), lr, betas=(0.9, 0.999), amsgrad=True)
 
         scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc_cont_emb, gamma=0.98)
         scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec_cont_emb, gamma=0.98)
@@ -174,7 +174,7 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
             scheduler_Enc.step()
             scheduler_Dec.step()
 
-            epochs.set_description(f'Loss E_cont: {loss_mse.item()}')
+            epochs.set_description(f'Loss E_num: {loss_mse.item()}')
 
         encoder_cont_emb.eval()
         decoder_cont_emb.eval()
@@ -230,7 +230,7 @@ CATEGORICAL FEATURES
 '''
 
 def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Autoencoder',
-                                  lr=1e-3, epochs=100, batch_size=2**8, device='cpu'):
+                                  lr=1e-3, epochs=60, batch_size=2**8, device='cpu'):
     scaler_cat = {}
     
     if enc_type == 'Frequency':
@@ -247,8 +247,8 @@ def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim
         encoder = Encoder_client_emb(categorical_emb.shape[1], latent_dim).to(device)
         decoder = Decoder_client_emb(latent_dim, categorical_emb.shape[1]).to(device)
 
-        optimizer_Enc = optim.Adam(encoder.parameters(), lr)
-        optimizer_Dec = optim.Adam(decoder.parameters(), lr)
+        optimizer_Enc = optim.AdamW(encoder.parameters(), lr)
+        optimizer_Dec = optim.AdamW(decoder.parameters(), lr)
         
         scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc, gamma=0.98)
         scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec, gamma=0.98)
@@ -342,8 +342,8 @@ def create_cond_vector(data: pd.DataFrame, X_emb: np.array, date_feature: str, n
     encoder = Encoder(data_dim, latent_dim).to(device)
     decoder = Decoder(latent_dim, data_dim).to(device)
 
-    optimizer_Enc = optim.Adam(encoder.parameters(), lr)
-    optimizer_Dec = optim.Adam(decoder.parameters(), lr)
+    optimizer_Enc = optim.AdamW(encoder.parameters(), lr)
+    optimizer_Dec = optim.AdamW(decoder.parameters(), lr)
 
     loader = DataLoader(torch.FloatTensor(X_emb), batch_size=batch_size, shuffle=True)
 
@@ -659,10 +659,10 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
     supervisor = Supervisor(data_dim + dim_Vc, data_dim, h_dim, num_blocks_gen).to(device)
     discriminator2 = Discriminator(data_dim + dim_Vc, h_dim, num_blocks_dis).to(device)
 
-    optimizer_G = optim.Adam(generator.parameters(), lr=lr_rates[0], betas=(0.9, 0.999), amsgrad=True)
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_rates[1], betas=(0.9, 0.999), amsgrad=True)
-    optimizer_S = optim.Adam(supervisor.parameters(), lr=lr_rates[2], betas=(0.9, 0.999), amsgrad=True)
-    optimizer_D2 = optim.Adam(discriminator2.parameters(), lr=lr_rates[3], betas=(0.9, 0.999), amsgrad=True)
+    optimizer_G = optim.AdamW(generator.parameters(), lr=lr_rates[0], betas=(0.9, 0.999), amsgrad=True)
+    optimizer_D = optim.AdamW(discriminator.parameters(), lr=lr_rates[1], betas=(0.9, 0.999), amsgrad=True)
+    optimizer_S = optim.AdamW(supervisor.parameters(), lr=lr_rates[2], betas=(0.9, 0.999), amsgrad=True)
+    optimizer_D2 = optim.AdamW(discriminator2.parameters(), lr=lr_rates[3], betas=(0.9, 0.999), amsgrad=True)
 
     scheduler_G = torch.optim.lr_scheduler.ExponentialLR(optimizer_G, gamma=0.99)
     scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optimizer_D, gamma=0.99)

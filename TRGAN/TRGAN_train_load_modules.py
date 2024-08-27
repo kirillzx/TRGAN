@@ -5,25 +5,167 @@ from TRGAN.encoders import *
 from TRGAN.TRGAN_main_V2 import *
 
 
-def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, client_id, latent_dim, device:str = 'cpu', epochs: int = 100):
-    # categorical embeddings
-    categorical_emb, scaler_cat = encode_categorical_embeddings(data, cat_feat_names, latent_dim=latent_dim['categorical'], device=device, epochs=epochs)
+def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, client_id,
+               latent_dim, device: str = 'cpu', epochs: int = 80, load: bool = True, directory: str = 'Pretrained_model/'):
     
-    # onehot embeddings
-    X_oh = create_onehot(data, onehot_cols)
-    onehot_emb, scaler_onehot = encode_onehot_embeddings(X_oh, latent_dim['onehot'], device=device, epochs=epochs)
-    
-    # numerical embeddings
-    numerical_emb, scaler_num = encode_continuous_embeddings(data, num_feat_names, latent_dim=latent_dim['numerical'], device=device, epochs=epochs)
-    
-    # join embeddings
-    X_emb = create_embeddings(onehot_emb, categorical_emb, numerical_emb)
-    
-    # create conditional vector and synth date
-    cond_vector, synth_date, cv_params = \
-        create_cond_vector(data, X_emb, date_feature, client_id, time_type='synth', latent_dim=latent_dim['cv'], opt_time=True, device=device)
+    if load:
+        # onehot embeddings
+        ######################################
+        X_oh = pd.DataFrame(np.load(directory + 'X_oh.npy'), columns=np.load(directory + 'X_oh_cols.npy', allow_pickle=True))
+        onehot_emb = np.load(directory + 'onehot_emb.npy')
         
-    return X_emb, X_oh, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params
+        encoder_onehot = Encoder_onehot(len(X_oh.columns), latent_dim['onehot']).to(device)
+        decoder_onehot = Decoder_onehot(latent_dim['onehot'], len(X_oh.columns)).to(device)
+        
+        encoder_onehot.load_state_dict(torch.load(directory + 'onehot_encoder.pt'))
+        decoder_onehot.load_state_dict(torch.load(directory + 'onehot_decoder.pt'))
+        
+        encoder_onehot.eval()
+        decoder_onehot.eval()
+        
+        scaler_onehot = {'encoder': encoder_onehot,
+                         'decoder': decoder_onehot}
+        ######################################
+        
+        
+        
+        # categorical embeddings
+        ######################################
+        categorical_emb = np.load(directory + 'categorical_emb.npy')
+        
+        encoder_cat = Encoder_client_emb(len(cat_feat_names), latent_dim['categorical']).to(device)
+        decoder_cat = Decoder_client_emb(latent_dim['categorical'], len(cat_feat_names)).to(device)
+        
+        encoder_cat.load_state_dict(torch.load(directory + 'categorical_encoder.pt'))
+        decoder_cat.load_state_dict(torch.load(directory + 'categorical_decoder.pt'))
+        
+        encoder_cat.eval()
+        decoder_cat.eval()
+        
+        
+        scaler_cat = {'encoder': encoder_cat,
+                      'decoder': decoder_cat,
+                      'scaler': joblib.load(directory + 'scaler_cat.joblib'),
+                      'freq_encoder': joblib.load(directory + 'freq_encoder.joblib')}
+        ######################################
+        
+        
+        # numerical embeddings
+        ######################################
+        numerical_emb = np.load(directory + 'numerical_emb.npy')
+        
+        encoder_num = Encoder_cont_emb(len(num_feat_names), latent_dim['numerical']).to(device)
+        decoder_num = Decoder_cont_emb(latent_dim['numerical'], len(num_feat_names)).to(device)
+        
+        encoder_num.load_state_dict(torch.load(directory + 'numerical_encoder.pt'))
+        decoder_num.load_state_dict(torch.load(directory + 'numerical_decoder.pt'))
+        
+        encoder_num.eval()
+        decoder_num.eval()
+        
+        scaler_num = {'encoder': encoder_num,
+                      'decoder': decoder_num,
+                      'scaler_minmax': joblib.load(directory + 'scaler_minmax.joblib'),
+                      'scaler': joblib.load(directory + 'scaler_num.joblib')}
+        ######################################
+        
+        
+        # embeddings
+        ######################################
+        X_emb = np.load(directory + 'X_emb.npy')
+        scaler = joblib.load(directory + 'scaler_emb.joblib')
+        ######################################
+        
+        
+        
+        # create conditional vector and synth date
+        ######################################
+        encoder_cv = Encoder(len(X_emb[0]), latent_dim['cv']).to(device)
+        encoder_cv.load_state_dict(torch.load(directory + 'cv_encoder.pt'))
+        encoder_cv.eval()
+        
+        cv_params = {'deltas_real': np.load(directory + 'deltas_real.npy', allow_pickle=True),
+                     'deltas_synth': np.load(directory + 'deltas_synth.npy', allow_pickle=True),
+                     'xiP': np.load(directory + 'xiP.npy', allow_pickle=True),
+                     'quantile_index': np.load(directory + 'quantile_index.npy', allow_pickle=True),
+                     'date_transform': np.load(directory + 'date_transform.npy'),
+                     'encoder': encoder_cv}
+        
+        cond_vector = encoder_cv(torch.FloatTensor(X_emb).to(device)).detach().cpu().numpy()
+        cond_vector = np.concatenate([cond_vector, cv_params['date_transform']], axis=1)
+        synth_date = pd.DataFrame(np.load(directory + 'synth_date.npy', allow_pickle=True), columns=[date_feature])
+        ######################################
+        
+        
+        
+        
+    else:
+        # onehot embeddings
+        ######################################
+        X_oh = create_onehot(data, onehot_cols)
+        onehot_emb, scaler_onehot = encode_onehot_embeddings(X_oh, latent_dim['onehot'], device=device, epochs=epochs)
+        
+        torch.save(scaler_onehot['encoder'].state_dict(), directory + 'onehot_encoder.pt')
+        torch.save(scaler_onehot['decoder'].state_dict(), directory + 'onehot_decoder.pt')
+        np.save(directory + 'onehot_emb.npy', onehot_emb)
+        np.save(directory + 'X_oh.npy', X_oh)
+        np.save(directory + 'X_oh_cols.npy', X_oh.columns.values)
+        ######################################
+        
+        
+        # categorical embeddings
+        ######################################
+        categorical_emb, scaler_cat = encode_categorical_embeddings(data, cat_feat_names, latent_dim=latent_dim['categorical'], device=device, epochs=epochs)
+        
+        torch.save(scaler_cat['encoder'].state_dict(), directory + 'categorical_encoder.pt')
+        torch.save(scaler_cat['decoder'].state_dict(), directory + 'categorical_decoder.pt')
+        np.save(directory + 'categorical_emb.npy', categorical_emb)
+        joblib.dump(scaler_cat['scaler'], directory + 'scaler_cat.joblib')
+        joblib.dump(scaler_cat['freq_encoder'], directory + 'freq_encoder.joblib')
+        ######################################
+        
+        
+        # numerical embeddings
+        ######################################
+        numerical_emb, scaler_num = encode_continuous_embeddings(data, num_feat_names, latent_dim=latent_dim['numerical'], device=device, epochs=epochs)
+        
+        torch.save(scaler_num['encoder'].state_dict(), directory + 'numerical_encoder.pt')
+        torch.save(scaler_num['decoder'].state_dict(), directory + 'numerical_decoder.pt')
+        np.save(directory + 'numerical_emb.npy', numerical_emb)
+        joblib.dump(scaler_num['scaler_minmax'], directory + 'scaler_minmax.joblib')
+        joblib.dump(scaler_num['scaler'], directory + 'scaler_num.joblib')
+        ######################################
+            
+            
+        # join embeddings
+        ######################################
+        X_emb = create_embeddings(onehot_emb, categorical_emb, numerical_emb)
+        scaler = MinMaxScaler((-1, 1))
+        X_emb = scaler.fit_transform(X_emb)
+        
+        np.save(directory + 'X_emb.npy', X_emb)
+        joblib.dump(scaler, directory + 'scaler_emb.joblib')
+        ######################################
+        
+        
+        # create conditional vector and synth date
+        ######################################
+        print('Optimizing poisson intensity...')
+        cond_vector, synth_date, cv_params = \
+            create_cond_vector(data, X_emb, date_feature, client_id, time_type='synth', latent_dim=latent_dim['cv'], opt_time=True, device=device)
+            
+        torch.save(cv_params['encoder'].state_dict(), directory + 'cv_encoder.pt')
+        np.save(directory + 'deltas_real.npy', cv_params['deltas_real'])
+        np.save(directory + 'deltas_synth.npy', cv_params['deltas_synth'])
+        np.save(directory + 'xiP.npy', cv_params['xiP'])
+        np.save(directory + 'quantile_index.npy', cv_params['quantile_index'])   
+        np.save(directory + 'date_transform.npy', cv_params['date_transform']) 
+        np.save(directory + 'synth_date.npy', synth_date.values)  
+        ######################################
+        
+    return X_emb, X_oh, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params, scaler
+    
+    
     
     
 def train(X_emb, cond_vector, latent_dim, dim_noise=15, epochs=40, experiment_id='TRGAN_V2_1',
@@ -32,8 +174,8 @@ def train(X_emb, cond_vector, latent_dim, dim_noise=15, epochs=40, experiment_id
     dim_X_emb = latent_dim['onehot'] + latent_dim['categorical'] + latent_dim['numerical']
     dim_Vc = latent_dim['cv'] + 5
     h_dim = 2**6
-    num_blocks_gen = 1
-    num_blocks_dis = 1
+    num_blocks_gen = 2
+    num_blocks_dis = 2
 
     if load:
         generator = Generator(dim_noise + dim_Vc, dim_X_emb, h_dim, num_blocks_gen).to(DEVICE)
@@ -69,6 +211,11 @@ def train(X_emb, cond_vector, latent_dim, dim_noise=15, epochs=40, experiment_id
 
 #     synth_df = inverse_transform(synth_data, latent_dim, X_oh.columns, scaler_onehot, scaler_cat, scaler_num, cat_feat_names,
 #                                 mcc_name, num_feat_names, True, synth_date, 'TRANS_TIME')
+
+
+
+
+
 
 
 def create_cat_emb(X_oh, dim_Xoh, lr_E_oh, epochs=20, batch_size=2**8, load=False,\
