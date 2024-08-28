@@ -112,16 +112,60 @@ def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, scaler_on
 '''
 CONTINUOUS FEATURES
 '''
-def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=60, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
+def encode_continuous_embeddings(X, feat_names, type_scale='CBNormalize', epochs=60, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
     data = copy.deepcopy(X)
     processing_dict = dict()
 
-    if type_scale == 'Standardize':
 
+    if type_scale == 'Standardize':
         scaler_std = StandardScaler()
         data[feat_names] = scaler_std.fit_transform(data[feat_names].values)
         X_cont = data[feat_names].values
         processing_dict['scaler'] = scaler_std
+        
+        scaler_cont2 = MinMaxScaler((-1, 1))
+        data[feat_names] = scaler_cont2.fit_transform(data[feat_names])
+        processing_dict['scaler_minmax'] = scaler_cont2
+        
+        encoder_cont_emb = Encoder_cont_emb(len(feat_names), latent_dim).to(device)
+        decoder_cont_emb = Decoder_cont_emb(latent_dim, len(feat_names)).to(device)
+        processing_dict['encoder'] = encoder_cont_emb
+        processing_dict['decoder'] = decoder_cont_emb
+        
+        
+        
+    elif type_scale == 'CBNormalize':
+        print('Numerical features processing...')
+        
+        amt = data[feat_names]
+
+        data_normalized = []
+        data_component = []
+        scaler = []
+
+        for i in range(len(feat_names)):
+            cbn =  ClusterBasedNormalizer(learn_rounding_scheme=True, enforce_min_max_values=True,\
+                                        max_clusters=15, weight_threshold=0.005)
+            data1 = cbn.fit_transform(amt, column=feat_names[i])
+            data_normalized.append(data1[feat_names[i]+'.normalized'])
+            data_component.append(data1[feat_names[i]+'.component'])
+            scaler.append(cbn)
+
+        data[feat_names] = np.vstack(data_normalized).T
+        scaler_cont2 = MinMaxScaler((-1, 1))
+        data[feat_names] = scaler_cont2.fit_transform(data[feat_names])
+        
+        components = np.vstack(data_component).T
+        scaler.append(components)
+        
+        processing_dict['scaler'] = scaler
+        processing_dict['scaler_minmax'] = scaler_cont2
+        processing_dict['encoder'] = Encoder_cont_emb(len(feat_names), latent_dim).to(device)
+        processing_dict['decoder'] = Decoder_cont_emb(latent_dim, len(feat_names)).to(device)
+        
+        X_cont = data[feat_names].values
+        
+        
 
     elif type_scale == 'Autoencoder':       
         gaus_tr = []
@@ -161,7 +205,7 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
                 H = encoder_cont_emb(X.float().to(device))
                 X_tilde = decoder_cont_emb(H.to(device))
                 
-                loss_mse = loss(X.float().to(device), X_tilde).to(device)
+                loss_mse = (loss(X.float().to(device), X_tilde)).to(device)
                 
                 optimizer_Enc_cont_emb.zero_grad()
                 optimizer_Dec_cont_emb.zero_grad()
@@ -185,10 +229,6 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
         processing_dict['scaler_minmax'] = scaler_cont2
         processing_dict['scaler'] = gaus_tr
         processing_dict['encoder'] = encoder_cont_emb
-        # scaler.append(decoder_cont_emb)
-        # scaler.append(scaler_cont2)
-        # scaler.append(gaus_tr)
-        # scaler.append(encoder_cont_emb)
 
     else:
         print('Choose preprocessing scheme for continuous features. Available: CBNormalize and Standardize')
@@ -200,9 +240,10 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
 
 
 
-def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler: dict, type_scale_cont: str = 'Autoencoder', device='cpu') -> pd.DataFrame:
+def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler: dict, type_scale_cont: str = 'CBNormalize', device='cpu') -> pd.DataFrame:
     if type_scale_cont == 'Standardize':
         synth_cont_feat = embeddings
+        synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
         synth_cont_feat = scaler['scaler'].inverse_transform(synth_cont_feat)
 
     elif type_scale_cont == 'Autoencoder':
@@ -218,6 +259,21 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
         # synth_cont_feat = decoded_array
         
         synth_cont_feat = scaler['scaler'][0].inverse_transform(synth_cont_feat)
+        
+        
+    elif type_scale_cont == 'CBNormalize':
+        cont_synth = []
+        synth_cont_feat = embeddings
+        synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
+        
+        for i in range(len(scaler['scaler']) - 1):
+            scaler['scaler'][i].reset_randomization()
+            cont_synth.append(scaler['scaler'][i].reverse_transform(pd.DataFrame(np.concatenate([synth_cont_feat[:, i].reshape(-1, 1),\
+                                                scaler['scaler'][-1][:, i].reshape(-1, 1)], axis=1), \
+                                                columns=[feat_names[i]+'.normalized', feat_names[i]+'.component'])))
+
+        synth_cont_feat = np.hstack(cont_synth)
+    
 
     else:
         print('Incorrect preprocessing type for continuous features')
@@ -229,14 +285,14 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
 CATEGORICAL FEATURES
 '''
 
-def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Autoencoder',
+def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Frequency',
                                   lr=1e-3, epochs=60, batch_size=2**8, device='cpu'):
     scaler_cat = {}
     
     if enc_type == 'Frequency':
         embeddings, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
-        scaler_cat['encoder'] = ''
-        scaler_cat['decoder'] = ''
+        scaler_cat['encoder'] = Encoder_client_emb(embeddings.shape[1], latent_dim).to(device)
+        scaler_cat['decoder'] = Decoder_client_emb(latent_dim, embeddings.shape[1]).to(device)
         scaler_cat['scaler'] = scaler_cl
         scaler_cat['freq_encoder'] = freq_enc
         
@@ -264,7 +320,7 @@ def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim
                 H = encoder(X.float().to(device))
                 X_tilde = decoder(H.to(device))
                 
-                loss_mse = loss(X.float().to(device), X_tilde).to(device)
+                loss_mse = (loss(X.float().to(device), X_tilde)).to(device)
                 
                 optimizer_Enc.zero_grad()
                 optimizer_Dec.zero_grad()
@@ -292,11 +348,11 @@ def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim
     return embeddings, scaler_cat
 
 
-def decode_categorical_embeddings(embeddings: np.array, cat_feat_names: list, scaler_cat: dict, enc_type:str = 'Autoencoder', device='cpu'):
+def decode_categorical_embeddings(embeddings: np.array, cat_feat_names: list, scaler_cat: dict, enc_type:str = 'Frequency', device='cpu'):
     
     if enc_type == 'Frequency':
         dec_array = inverse_categorical_embeddings(embeddings, cat_feat_names, scaler_cat['scaler'], scaler_cat['freq_encoder'])
-        df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
+        df_cat = pd.DataFrame(dec_array, columns=cat_feat_names)
         
     elif enc_type == 'Autoencoder':
         synth_data_scaled_cl = scaler_cat['decoder'](torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
@@ -394,9 +450,12 @@ def inverse_transform(synth_data: np.array, latent_dim: dict, onehot_cols:list, 
     
     
     if time_feature != '':
-        synth_df['HOUR'] = synth_df['HOUR'].astype(int).astype(str).apply(lambda x: x.zfill(2))
-        synth_df['MINUTE'] = synth_df['MINUTE'].astype(int).astype(str).apply(lambda x: x.zfill(2))
-        synth_df['SECOND'] = synth_df['SECOND'].astype(int).astype(str).apply(lambda x: x.zfill(2))
+        synth_df['HOUR'] = synth_df['HOUR'].astype(int).apply(lambda x: (0 if x < 0 else x) and (0 if x > 23 else x))
+        synth_df['HOUR'] = synth_df['HOUR'].astype(str).apply(lambda x: x.zfill(2))
+        synth_df['MINUTE'] = synth_df['MINUTE'].astype(int).apply(lambda x: (0 if x < 0 else x) and (59 if x > 59 else x))
+        synth_df['MINUTE'] = synth_df['MINUTE'].astype(str).apply(lambda x: x.zfill(2))
+        synth_df['SECOND'] = synth_df['SECOND'].astype(int).apply(lambda x: (0 if x < 0 else x) and (59 if x > 59 else x))
+        synth_df['SECOND'] = synth_df['SECOND'].astype(str).apply(lambda x: x.zfill(2))
         synth_df[time_feature] = synth_df[['HOUR', 'MINUTE', 'SECOND']].apply(lambda row: ':'.join(row.values), axis=1)
         synth_df = synth_df.drop(['HOUR', 'MINUTE', 'SECOND'], axis=1)
     

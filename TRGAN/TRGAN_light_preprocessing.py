@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import copy
 import random
+import sys
 
 import torch
 from torch import optim
@@ -144,6 +145,27 @@ def inverse_numerical_embeddings(num_embeddings: np.array, feat_names: list, sca
     emb_recovered = decoded_array.T[0]
     
     return emb_recovered
+
+
+def learn_rounding_digits(data):
+    MAX_DECIMALS = sys.float_info.dig - 1
+    roundable_data = data[~(np.isinf(data.astype(float)) | pd.isna(data))]
+
+    # Doesn't contain numbers
+    if len(roundable_data) == 0:
+        return None
+
+    # Doesn't contain decimal digits
+    if ((roundable_data % 1) == 0).all():
+        return 0
+
+    # Try to round to fewer digits
+    if (roundable_data == roundable_data.round(MAX_DECIMALS)).all():
+        for decimal in range(MAX_DECIMALS + 1):
+            if (roundable_data == roundable_data.round(decimal)).all():
+                return decimal
+
+    return None
 
 
 '''
