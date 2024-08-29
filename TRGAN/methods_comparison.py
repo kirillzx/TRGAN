@@ -19,7 +19,7 @@ from scipy.stats import kstest, ks_2samp, wasserstein_distance
 import scipy.stats as sts
 from tqdm import tqdm
 
-from TRGAN.TRGAN_main import *
+from TRGAN.TRGAN_main_V2 import *
 from TRGAN.encoders import *
 import TRGAN.TRGAN_train_load_modules as trgan_train
 from TRGAN.evaluation_metrics import *
@@ -31,6 +31,68 @@ from sdv.single_table import CTGANSynthesizer
 from sdv.single_table import TVAESynthesizer
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+
+
+
+def plot_hist_categorical(data, synth_df, feat_name):
+    plt.subplots(figsize=(10, 5), dpi=100)
+
+    plt.hist(data[feat_name], alpha=0.6, label='Real', bins=np.arange(0, data[feat_name].value_counts().shape[0], 70), color='black', rwidth=0.8)
+    plt.hist(synth_df[feat_name], alpha=0.6, label='Synth', bins=np.arange(0, data[feat_name].value_counts().shape[0], 70), color='red', rwidth=0.8)
+
+    plt.legend()
+    plt.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+    plt.xlabel(f'Bins of categorical feature "{feat_name}"')
+    plt.ylabel('Counts')
+
+    plt.show()
+    
+    
+def plot_hist_numerical(data, synth_df, feat_name):
+    plt.subplots(figsize=(10, 5), dpi=100)
+    bins_range = np.arange(np.min(data[feat_name]), np.max(data[feat_name]), round(np.max(data[feat_name]) - np.min(data[feat_name])) / 60)
+    
+    plt.hist(data[feat_name], bins=bins_range, label='Real', alpha=0.6, density=True, color='black')
+    plt.hist(synth_df[feat_name], bins=bins_range, label='Synth', alpha=0.6, density=True, color='red')
+
+    plt.legend()
+    plt.xlabel(f'"{feat_name}" values')
+    plt.ylabel('Density')
+    plt.show()
+
+
+def plot_hist_onehot(data: pd.DataFrame, synth_df: pd.DataFrame, feat_name: str):
+    plt.subplots(figsize=(10, 5), dpi=100)
+
+    if data[feat_name].dtype == 'float' or data[feat_name].dtype == 'int':
+        plt.bar(data[feat_name].value_counts().index.values.astype(int).astype(str), data[feat_name].value_counts().values/(np.sum(data[feat_name].value_counts().values)),\
+                                                            color='black', alpha=0.6, label='Real')
+        plt.bar(synth_df[feat_name].value_counts().index.values.astype(int).astype(str), synth_df[feat_name].value_counts().values/(np.sum(synth_df[feat_name].value_counts().values)),\
+                                                            color='red', alpha=0.6, label='TRGAN')
+
+        plt.xticks(data[feat_name].value_counts().index.values.astype(str)[::], labels=data[feat_name].value_counts().index.values.astype(str)[::], rotation=45)
+        # plt.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+        plt.legend()
+        plt.ylabel('Density')
+        plt.xlabel(f'"{feat_name}" values')
+        plt.show()
+        
+    elif data[feat_name].dtype == 'object':
+        plt.bar(data[feat_name].value_counts().index.values.astype(str), data[feat_name].value_counts().values/(np.sum(data[feat_name].value_counts().values)),\
+                                                            color='black', alpha=0.6, label='Real')
+        plt.bar(synth_df[feat_name].value_counts().index.values.astype(str), synth_df[feat_name].value_counts().values/(np.sum(synth_df[feat_name].value_counts().values)),\
+                                                            color='red', alpha=0.6, label='TRGAN')
+
+        plt.xticks(data[feat_name].value_counts().index.values.astype(str)[::], labels=data[feat_name].value_counts().index.values.astype(str)[::], rotation=45)
+        # plt.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+        plt.legend()
+        plt.ylabel('Density')
+        plt.xlabel(f'"{feat_name}" values')
+        plt.show()
+        
+    else:
+        print('Incorrect data type. Available "float, int and object".')
+
 
 '''
 Copula GAN
