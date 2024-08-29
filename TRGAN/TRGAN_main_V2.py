@@ -105,7 +105,15 @@ def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, scaler_on
     onehot_decoded = np.abs(np.around(scaler_onehot['decoder'](torch.FloatTensor(onehot_embeddings).to(device)).detach().cpu().numpy())).astype(int)
     df_onehot = pd.DataFrame(onehot_decoded, columns = onehot_cols)
     df_onehot = undummify(df_onehot, prefix_sep="_")
-    df_onehot[mcc_name] = df_onehot[mcc_name].astype(int).astype(str)
+    
+    if df_onehot[mcc_name].dtype == 'float' or df_onehot[mcc_name].dtype == 'int':
+        df_onehot[mcc_name] = df_onehot[mcc_name].astype(int).astype(str)
+        
+    elif df_onehot[mcc_name].dtype == 'object':
+        df_onehot[mcc_name] = df_onehot[mcc_name].astype(str)
+        
+    else:
+        print('Incorrect data type. Available "float, int and object".')
     
     return df_onehot
 
@@ -766,7 +774,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
             fake_super = supervisor(torch.cat([fake.detach(), Vc], dim=1)).to(device)
             
             disc2_loss = (-torch.mean(torch.nan_to_num(discriminator2(X))) + torch.mean(torch.nan_to_num(discriminator2(torch.cat([fake_super, Vc], dim=1))))).to(device) 
-                # grad_penalty(discriminator2, X, torch.cat([fake, Vc], dim=1), device)
+                # grad_penalty(discriminator2, X, torch.cat([fake_super, Vc], dim=1), device)
 
             optimizer_D.zero_grad()
             disc_loss.backward()
