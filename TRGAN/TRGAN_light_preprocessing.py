@@ -19,6 +19,7 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 from rdt.transformers.numerical import ClusterBasedNormalizer, GaussianNormalizer
 from rdt.transformers.categorical import UniformEncoder
 from typing import Union, TypeVar
+import scipy.stats as sts
 
 
 
@@ -166,6 +167,31 @@ def learn_rounding_digits(data):
                 return decimal
 
     return None
+
+
+
+def prob_int_transform(data: np.array) -> np.array:
+    scaler_01 = MinMaxScaler()
+    temp = scaler_01.fit_transform(data) 
+    temp = np.where(temp > 0, temp, temp + 1e-5)
+    temp = np.where(temp < 1, temp, temp - 1e-5)
+    
+    tr_arr = []
+    for i in range(data.shape[1]):
+        tr_arr.append(sts.norm.ppf(temp[:, i], loc=0, scale=1))
+        
+    return np.array(tr_arr).T, scaler_01
+
+
+def inverse_prob_int_transform(data: np.array, scaler) -> np.array:
+    tr_arr = []
+    for i in range(data.shape[1]):
+        tr_arr.append(sts.norm.cdf(data[:, i]))
+
+    tr_arr = np.array(tr_arr).T
+    res = scaler.inverse_transform(tr_arr)
+    
+    return res
 
 
 '''
