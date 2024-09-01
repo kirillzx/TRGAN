@@ -33,12 +33,11 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 
-
-def plot_hist_categorical(data, synth_df, feat_name):
+def plot_hist_categorical(data, synth_df, feat_name, tick=50):
     plt.subplots(figsize=(10, 5), dpi=100)
 
-    plt.hist(data[feat_name], alpha=0.6, label='Real', bins=np.arange(0, data[feat_name].value_counts().shape[0], 70), color='black', rwidth=0.8)
-    plt.hist(synth_df[feat_name], alpha=0.6, label='Synth', bins=np.arange(0, data[feat_name].value_counts().shape[0], 70), color='red', rwidth=0.8)
+    plt.hist(data[feat_name], alpha=0.6, label='Real', bins=np.arange(0, data[feat_name].value_counts().shape[0], tick), color='black', rwidth=0.8)
+    plt.hist(synth_df[feat_name], alpha=0.6, label='Synth', bins=np.arange(0, data[feat_name].value_counts().shape[0], tick), color='red', rwidth=0.8)
 
     plt.legend()
     plt.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
@@ -48,9 +47,9 @@ def plot_hist_categorical(data, synth_df, feat_name):
     plt.show()
     
     
-def plot_hist_numerical(data, synth_df, feat_name):
+def plot_hist_numerical(data, synth_df, feat_name, tick=60):
     plt.subplots(figsize=(10, 5), dpi=100)
-    bins_range = np.arange(np.min(data[feat_name]), np.max(data[feat_name]), round(np.max(data[feat_name]) - np.min(data[feat_name])) / 60)
+    bins_range = np.arange(np.min(data[feat_name]), np.max(data[feat_name]), round(np.max(data[feat_name]) - np.min(data[feat_name])) / tick)
     
     plt.hist(data[feat_name], bins=bins_range, label='Real', alpha=0.6, density=True, color='black')
     plt.hist(synth_df[feat_name], bins=bins_range, label='Synth', alpha=0.6, density=True, color='red')
