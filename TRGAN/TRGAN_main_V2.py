@@ -120,7 +120,7 @@ def decode_onehot_embeddings(onehot_embeddings: np.array, onehot_cols, scaler_on
 '''
 CONTINUOUS FEATURES
 '''
-def encode_continuous_embeddings(X, feat_names, type_scale='CBNormalize', epochs=60, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
+def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs=60, lr=1e-3, bs=2**8, latent_dim=5, device='cpu'):
     data = copy.deepcopy(X)
     processing_dict = dict()
 
@@ -201,6 +201,16 @@ def encode_continuous_embeddings(X, feat_names, type_scale='CBNormalize', epochs
         scheduler_Enc = torch.optim.lr_scheduler.ExponentialLR(optimizer_Enc_cont_emb, gamma=0.98)
         scheduler_Dec = torch.optim.lr_scheduler.ExponentialLR(optimizer_Dec_cont_emb, gamma=0.98)
 
+        index_df_sort = []
+        data = data.reset_index(drop=True)
+        for col in feat_names:
+            temp = np.array(sorted(list(zip(data[col].values, np.arange(len(data[col])))), key=lambda x: x[0]))
+            data[col] = temp[:, 0]
+            index_df_sort.append(temp[:, 1])
+            
+            data = data.reset_index(drop=True)
+        index_df_sort = np.array(index_df_sort).T.astype(int)
+
         loader_cont_emb = DataLoader(torch.FloatTensor(data[feat_names].values), bs, shuffle=True)
 
         epochs = tqdm(range(epochs))
@@ -233,10 +243,24 @@ def encode_continuous_embeddings(X, feat_names, type_scale='CBNormalize', epochs
 
         X_cont = encoder_cont_emb(torch.FloatTensor(data[feat_names].values).to(device)).detach().cpu().numpy()
         
+        val_arr = []
+        index_arr = []
+
+        for i in range(X_cont.shape[1]):
+            temp = np.array(sorted(list(zip(X_cont[:, i], np.arange(len(X_cont)))), key=lambda x: x[0]))
+            val_arr.append(temp[:, 0])
+            index_arr.append(temp[:, 1])
+            
+        val_arr = np.array(val_arr).T
+        index_arr = np.array(index_arr).T.astype(int)
+        
+        
         processing_dict['decoder'] = decoder_cont_emb
         processing_dict['scaler_minmax'] = scaler_cont2
         processing_dict['scaler'] = gaus_tr
         processing_dict['encoder'] = encoder_cont_emb
+        processing_dict['index_df_sort'] = index_df_sort
+        processing_dict['index_arr'] = index_arr
 
     else:
         print('Choose preprocessing scheme for continuous features. Available: CBNormalize and Standardize')
@@ -248,7 +272,7 @@ def encode_continuous_embeddings(X, feat_names, type_scale='CBNormalize', epochs
 
 
 
-def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler: dict, type_scale_cont: str = 'CBNormalize', device='cpu') -> pd.DataFrame:
+def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler: dict, type_scale_cont: str = 'Autoencoder', device='cpu') -> pd.DataFrame:
     if type_scale_cont == 'Standardize':
         synth_cont_feat = embeddings
         synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
@@ -256,6 +280,13 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
 
     elif type_scale_cont == 'Autoencoder':
         synth_cont_feat = embeddings
+        
+        res_arr = []
+        for i in range(synth_cont_feat.shape[1]):
+            temp = np.array(sorted(synth_cont_feat[:, i]))
+            res_arr.append(np.array(sorted(list(zip(temp, scaler['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+        synth_cont_feat = np.array(res_arr).T
+        
         synth_cont_feat = (scaler['decoder'](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
         synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
         
@@ -293,19 +324,31 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
 CATEGORICAL FEATURES
 '''
 
-def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Frequency',
+def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim=4, enc_type:str = 'Autoencoder',
                                   lr=1e-3, epochs=60, batch_size=2**8, device='cpu'):
     scaler_cat = {}
     
     if enc_type == 'Frequency':
         embeddings, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
+        # embeddings, scaler_01 = prob_int_transform(embeddings)
+        
         scaler_cat['encoder'] = Encoder_client_emb(embeddings.shape[1], latent_dim).to(device)
         scaler_cat['decoder'] = Decoder_client_emb(latent_dim, embeddings.shape[1]).to(device)
         scaler_cat['scaler'] = scaler_cl
         scaler_cat['freq_encoder'] = freq_enc
+        # scaler_cat['scaler_01'] = scaler_01
         
     elif enc_type == 'Autoencoder':
         categorical_emb, scaler_cl, freq_enc = create_categorical_embeddings(data, cat_feat_names)
+        
+        index_df_sort = []
+        
+        for col in range(len(cat_feat_names)):
+            temp = np.array(sorted(list(zip(categorical_emb[:, col], np.arange(len(categorical_emb)))), key=lambda x: x[0]))
+            categorical_emb[:, col] = temp[:, 0]
+            index_df_sort.append(temp[:, 1])
+            
+        index_df_sort = np.array(index_df_sort).T.astype(int)
 
 
         encoder = Encoder_client_emb(categorical_emb.shape[1], latent_dim).to(device)
@@ -345,10 +388,23 @@ def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim
 
         embeddings = encoder(torch.FloatTensor(categorical_emb).to(device)).detach().cpu().numpy()
         
+        val_arr = []
+        index_arr = []
+
+        for i in range(embeddings.shape[1]):
+            temp = np.array(sorted(list(zip(embeddings[:, i], np.arange(len(embeddings)))), key=lambda x: x[0]))
+            val_arr.append(temp[:, 0])
+            index_arr.append(temp[:, 1])
+            
+        val_arr = np.array(val_arr).T
+        index_arr = np.array(index_arr).T.astype(int)
+        
         scaler_cat['encoder'] = encoder
         scaler_cat['decoder'] = decoder
         scaler_cat['scaler'] = scaler_cl
         scaler_cat['freq_encoder'] = freq_enc
+        scaler_cat['index_df_sort'] = index_df_sort
+        scaler_cat['index_arr'] = index_arr
         
     else:
         print('Choose encoding type')
@@ -356,13 +412,23 @@ def encode_categorical_embeddings(data: pd.DataFrame, cat_feat_names, latent_dim
     return embeddings, scaler_cat
 
 
-def decode_categorical_embeddings(embeddings: np.array, cat_feat_names: list, scaler_cat: dict, enc_type:str = 'Frequency', device='cpu'):
+def decode_categorical_embeddings(embeddings: np.array, cat_feat_names: list, scaler_cat: dict, enc_type:str = 'Autoencoder', device='cpu'):
     
     if enc_type == 'Frequency':
+        # embeddings = (embeddings - np.mean(embeddings, axis=0)) / np.std(embeddings, axis=0)
+        # dec_array = inverse_prob_int_transform(embeddings, scaler_cat['scaler_01'])
         dec_array = inverse_categorical_embeddings(embeddings, cat_feat_names, scaler_cat['scaler'], scaler_cat['freq_encoder'])
+        
+        
         df_cat = pd.DataFrame(dec_array, columns=cat_feat_names)
         
     elif enc_type == 'Autoencoder':
+        res_arr = []
+        for i in range(embeddings.shape[1]):
+            temp = np.array(sorted(embeddings[:, i]))
+            res_arr.append(np.array(sorted(list(zip(temp, scaler_cat['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+        embeddings = np.array(res_arr).T
+        
         synth_data_scaled_cl = scaler_cat['decoder'](torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
         
         dec_array = inverse_categorical_embeddings(synth_data_scaled_cl, cat_feat_names, scaler_cat['scaler'], scaler_cat['freq_encoder'])
@@ -511,10 +577,10 @@ class Generator(nn.Module):
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
             nn.LeakyReLU(0.1),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             nn.Linear(self.h_dim, self.h_dim),
             nn.LeakyReLU(0.1),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
@@ -580,10 +646,10 @@ class Supervisor(nn.Module):
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
             nn.LeakyReLU(0.1),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             nn.Linear(self.h_dim, self.h_dim),
             nn.LeakyReLU(0.1),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
