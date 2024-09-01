@@ -272,6 +272,7 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
 
 
 
+
 def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler: dict, type_scale_cont: str = 'Autoencoder', device='cpu') -> pd.DataFrame:
     if type_scale_cont == 'Standardize':
         synth_cont_feat = embeddings
@@ -279,26 +280,54 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
         synth_cont_feat = scaler['scaler'].inverse_transform(synth_cont_feat)
 
     elif type_scale_cont == 'Autoencoder':
-        synth_cont_feat = embeddings
+        if len(embeddings) <= len(scaler['index_arr']):
+            synth_cont_feat = embeddings
+            
+            res_arr = []
+            for i in range(synth_cont_feat.shape[1]):
+                temp = np.array(sorted(synth_cont_feat[:, i]))
+                res_arr.append(np.array(sorted(list(zip(temp, scaler['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+            synth_cont_feat = np.array(res_arr).T
+            
+            synth_cont_feat = (scaler['decoder'](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
+            synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
         
-        res_arr = []
-        for i in range(synth_cont_feat.shape[1]):
-            temp = np.array(sorted(synth_cont_feat[:, i]))
-            res_arr.append(np.array(sorted(list(zip(temp, scaler['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
-        synth_cont_feat = np.array(res_arr).T
-        
-        synth_cont_feat = (scaler['decoder'](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
-        synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
-        
-        # decoded_array = []
-        # for i in range(len(feat_names)):
-        #     scaler[2][i].reset_randomization()
-        #     temp = scaler[2][i].reverse_transform(pd.DataFrame(synth_cont_feat[:, i], columns=[feat_names[i]]))
-        #     decoded_array.append(temp.values)
-        # synth_cont_feat = decoded_array
-        
-        synth_cont_feat = scaler['scaler'][0].inverse_transform(synth_cont_feat)
-        
+            # decoded_array = []
+            # for i in range(len(feat_names)):
+            #     scaler[2][i].reset_randomization()
+            #     temp = scaler[2][i].reverse_transform(pd.DataFrame(synth_cont_feat[:, i], columns=[feat_names[i]]))
+            #     decoded_array.append(temp.values)
+            # synth_cont_feat = decoded_array
+            
+            synth_cont_feat = scaler['scaler'][0].inverse_transform(synth_cont_feat)
+            
+        else:
+            residual = len(embeddings) % len(scaler['index_arr'])
+            embeddings_total = []
+            for _ in range(len(embeddings)//len(scaler['index_arr'])):
+                res_arr = []
+                for i in range(embeddings.shape[1]):
+                    temp = np.array(sorted(embeddings[:, i]))
+                    res_arr.append(np.array(sorted(list(zip(temp, scaler['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+                
+                embeddings_loc = np.array(res_arr).T
+                embeddings_total.append(embeddings_loc)
+                
+            if residual != 0:
+                res_arr = []
+                for i in range(embeddings.shape[1]):
+                    temp = np.array(sorted(embeddings[:, i]))
+                    res_arr.append(np.array(sorted(list(zip(temp, scaler['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+                    
+                embeddings_loc = np.array(res_arr).T
+                embeddings_total.append(embeddings_loc[:residual])
+                    
+            embeddings_total = np.vstack(embeddings_total)
+            synth_cont_feat = embeddings_total
+            synth_cont_feat = (scaler['decoder'](torch.FloatTensor(synth_cont_feat).to(device))).detach().cpu().numpy()
+            synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
+            synth_cont_feat = scaler['scaler'][0].inverse_transform(synth_cont_feat)
+            
         
     elif type_scale_cont == 'CBNormalize':
         cont_synth = []
@@ -423,13 +452,39 @@ def decode_categorical_embeddings(embeddings: np.array, cat_feat_names: list, sc
         df_cat = pd.DataFrame(dec_array, columns=cat_feat_names)
         
     elif enc_type == 'Autoencoder':
-        res_arr = []
-        for i in range(embeddings.shape[1]):
-            temp = np.array(sorted(embeddings[:, i]))
-            res_arr.append(np.array(sorted(list(zip(temp, scaler_cat['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
-        embeddings = np.array(res_arr).T
+        if len(embeddings) <= len(scaler_cat['index_arr']):
+            res_arr = []
+            for i in range(embeddings.shape[1]):
+                temp = np.array(sorted(embeddings[:, i]))
+                res_arr.append(np.array(sorted(list(zip(temp, scaler_cat['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+            embeddings = np.array(res_arr).T
         
-        synth_data_scaled_cl = scaler_cat['decoder'](torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
+            synth_data_scaled_cl = scaler_cat['decoder'](torch.FloatTensor(embeddings).to(device)).detach().cpu().numpy()
+        
+        else:
+            embeddings_total = []
+            residual = len(embeddings) % len(scaler_cat['index_arr'])
+            for _ in range(len(embeddings)//len(scaler_cat['index_arr'])):
+                res_arr = []
+                for i in range(embeddings.shape[1]):
+                    temp = np.array(sorted(embeddings[:, i]))
+                    res_arr.append(np.array(sorted(list(zip(temp, scaler_cat['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+                embeddings_loc = np.array(res_arr).T
+                embeddings_total.append(embeddings_loc)
+                
+                
+            if residual != 0:
+                res_arr = []
+                for i in range(embeddings.shape[1]):
+                    temp = np.array(sorted(embeddings[:, i]))
+                    res_arr.append(np.array(sorted(list(zip(temp, scaler_cat['index_arr'][:, i])), key=lambda x: x[1]))[:, 0])
+                embeddings_loc = np.array(res_arr).T
+                embeddings_loc = embeddings_loc[:residual]
+                
+                embeddings_total.append(embeddings_loc)
+            
+            embeddings_total = np.vstack(embeddings_total)
+            synth_data_scaled_cl = scaler_cat['decoder'](torch.FloatTensor(embeddings_total).to(device)).detach().cpu().numpy()
         
         dec_array = inverse_categorical_embeddings(synth_data_scaled_cl, cat_feat_names, scaler_cat['scaler'], scaler_cat['freq_encoder'])
         df_cat =  pd.DataFrame(dec_array, columns=cat_feat_names)
