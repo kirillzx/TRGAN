@@ -33,6 +33,9 @@ We have proposed a new approach for synthetic bank transaction generation with t
 All data and pretrained models from the last updates can be found by the link on google drive https://drive.google.com/drive/folders/1mw3uUlw2yGz6N6BiaPe-5G-Iv-4s-6EO?usp=sharing.
 
 ## Method
+
+Open the TRGAN_V2_train.ipynb file.
+
 The general pipeline includes the following architecture: generator, supervisor and two discriminators. As Input we use a bounded stochastic process from the DCL family instead of standard Gaussian Noise for time dependencies and smoothenes of transitions between transactions. For a more detailed description see the article the section Generative Method.
 
 <p align="center">
