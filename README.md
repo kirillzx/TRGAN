@@ -35,7 +35,7 @@ All data and pretrained models from the last updates can be found by the link on
 
 ## Method
 
-Open the TRGAN_V2_train.ipynb file.
+For the last version open the TRGAN_V2_train.ipynb file.
 
 The general pipeline includes the following architecture: generator, supervisor and two discriminators. As Input we use a bounded stochastic process from the DCL family instead of standard Gaussian Noise for time dependencies and smoothenes of transitions between transactions. For a more detailed description see the article the section Generative Method.
 
