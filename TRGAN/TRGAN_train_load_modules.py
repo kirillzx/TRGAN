@@ -5,8 +5,10 @@ from TRGAN.encoders import *
 from TRGAN.TRGAN_main_V2 import *
 
 
-def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, client_id,
+def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, date_feature, time_feature, client_id,
                latent_dim, device: str = 'cpu', epochs: int = 80, load: bool = True, directory: str = 'Pretrained_model/'):
+    
+    round_array = learn_round(data, num_feat_names, time_feature)
     
     if load:
         # onehot embeddings
@@ -163,19 +165,19 @@ def embeddings(data: pd.DataFrame, cat_feat_names, num_feat_names, onehot_cols, 
         np.save(directory + 'synth_date.npy', synth_date.values)  
         ######################################
         
-    return X_emb, X_oh, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params, scaler
+    return X_emb, X_oh, cond_vector, synth_date, scaler_cat, scaler_onehot, scaler_num, cv_params, scaler, round_array
     
     
     
     
 def train(X_emb, cond_vector, latent_dim, dim_noise=15, epochs=40, experiment_id='TRGAN_V2_1',
-          DIRECTORY='Pretrained_model/', DEVICE='cpu', load=False):
+          DIRECTORY='Pretrained_model/', DEVICE='cpu', load=False, h_dim=2**6):
     
     dim_X_emb = latent_dim['onehot'] + latent_dim['categorical'] + latent_dim['numerical']
     dim_Vc = latent_dim['cv'] + 5
-    h_dim = 2**6
-    num_blocks_gen = 2
-    num_blocks_dis = 2
+    h_dim = h_dim
+    num_blocks_gen = 1
+    num_blocks_dis = 1
 
     if load:
         generator = Generator(dim_noise + dim_Vc, dim_X_emb, h_dim, num_blocks_gen).to(DEVICE)

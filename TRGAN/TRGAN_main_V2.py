@@ -278,6 +278,7 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
         synth_cont_feat = embeddings
         synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
         synth_cont_feat = scaler['scaler'].inverse_transform(synth_cont_feat)
+        df = pd.DataFrame(synth_cont_feat, columns=feat_names)
 
     elif type_scale_cont == 'Autoencoder':
         if len(embeddings) <= len(scaler['index_arr']):
@@ -328,6 +329,8 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
             synth_cont_feat = scaler['scaler_minmax'].inverse_transform(synth_cont_feat)
             synth_cont_feat = scaler['scaler'][0].inverse_transform(synth_cont_feat)
             
+        df = pd.DataFrame(synth_cont_feat, columns=feat_names).iloc[scaler['index_df_sort'][:, 0]]
+            
         
     elif type_scale_cont == 'CBNormalize':
         cont_synth = []
@@ -341,12 +344,13 @@ def decode_continuous_embeddings(embeddings: np.array, feat_names: list, scaler:
                                                 columns=[feat_names[i]+'.normalized', feat_names[i]+'.component'])))
 
         synth_cont_feat = np.hstack(cont_synth)
+        df = pd.DataFrame(synth_cont_feat, columns=feat_names)
     
 
     else:
         print('Incorrect preprocessing type for continuous features')
     
-    return pd.DataFrame(synth_cont_feat, columns=feat_names)
+    return df
 
 
 '''
@@ -565,11 +569,12 @@ def create_cond_vector(data: pd.DataFrame, X_emb: np.array, date_feature: str, n
 
 
 def inverse_transform(synth_data: np.array, latent_dim: dict, onehot_cols:list, scaler_onehot: dict, scaler_cat: dict, scaler_num: dict,
-                      cat_feat_names, mcc_name, num_feat_names, synth_date_flag = False, synth_date = '', time_feature = '') -> pd.DataFrame:
+                      cat_feat_names, mcc_name, num_feat_names, synth_date_flag = False, synth_date = '', time_feature = '', round_array=[]) -> pd.DataFrame:
     
     synth_df_onehot = decode_onehot_embeddings(synth_data[:, :latent_dim['onehot']], onehot_cols, scaler_onehot, mcc_name)
     synth_df_cat = decode_categorical_embeddings(synth_data[:, latent_dim['onehot']:latent_dim['onehot']+latent_dim['categorical']], cat_feat_names, scaler_cat)
     synth_df_num = decode_continuous_embeddings(synth_data[:, -latent_dim['numerical']:], num_feat_names, scaler_num)
+    synth_df_num = make_round(synth_df_num, round_array, time_feature)
     
     synth_df = pd.concat([synth_df_onehot, synth_df_cat, synth_df_num], axis=1)
     synth_df = synth_df.reset_index(drop=True)
@@ -872,16 +877,16 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
 
     b_d1 = 0.02
     b_d2 = 0.02
+    loss = torch.nn.MSELoss()
 
     for _ in epochs:
         for batch_idx, X in enumerate(loader_g):
-            loss = torch.nn.MSELoss()
-            batch_size = X.size(0)
 
+            batch_size = X.size(0)
             Vc = X[:, -dim_Vc:].to(device)
             
-            # noise = torch.randn(batch_size, dim_noise).to(device)
-            noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
+            noise = torch.randn(batch_size, dim_noise).to(device)
+            # noise = torch.FloatTensor(dclProcess(batch_size - 1, dim_noise)).to(device)
             z = torch.cat([noise, Vc], dim=1).to(device)
             
             fake = torch.nan_to_num(generator(z))
@@ -894,7 +899,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
      
             fake_super = supervisor(torch.cat([fake.detach(), Vc], dim=1)).to(device)
             
-            disc2_loss = (-torch.mean(torch.nan_to_num(discriminator2(X))) + torch.mean(torch.nan_to_num(discriminator2(torch.cat([fake_super, Vc], dim=1))))).to(device) 
+            disc2_loss = (-torch.mean(torch.nan_to_num(discriminator2(X))) + torch.mean(torch.nan_to_num(discriminator2(torch.cat([fake_super, Vc], dim=1))))).to(device)
                 # grad_penalty(discriminator2, X, torch.cat([fake_super, Vc], dim=1), device)
 
             optimizer_D.zero_grad()
@@ -916,8 +921,8 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
                 discriminator.trainable = False
 
                 gen_loss1 = -torch.mean(torch.nan_to_num(discriminator(torch.cat([generator(z), Vc], dim=1)))).to(device)
-                supervisor_loss = (-torch.mean(torch.nan_to_num(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1)), Vc], dim=1)))) +\
-                                    lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+                supervisor_loss = (-torch.mean(torch.nan_to_num(discriminator2(torch.cat([supervisor(torch.cat([generator(z), Vc], dim=1)), Vc], dim=1)))) ).to(device)\
+                                   + (lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1)), X[:,:-dim_Vc])).to(device)
                 
                
                 gen_loss = (alpha * gen_loss1 + (1 - alpha) * supervisor_loss)
@@ -927,7 +932,8 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
                     # Vc], dim=1)))) + lambda1 * loss(supervisor(z), X[:,:-dim_Vc])).to(device)
                 
                 supervisor_loss2 = ((-torch.mean(discriminator2(torch.cat([supervisor(torch.cat([generator(z).detach(), Vc], dim=1)),\
-                    Vc], dim=1))))  + lambda1 * loss(supervisor(torch.cat([generator(z), Vc], dim=1).detach()), X[:,:-dim_Vc])).to(device)
+                    Vc], dim=1))))).to(device) +\
+                (lambda1 * loss(supervisor(torch.cat([generator(z).detach(), Vc], dim=1)), X[:,:-dim_Vc])).to(device)
                 
                 optimizer_G.zero_grad()
                 gen_loss.backward()
@@ -1029,8 +1035,8 @@ def sample(n_samples, generator, supervisor, noise_dim, cond_vector, X_emb, enco
         synth_date, cond_vector, params = sample_cond_vector_with_time(n_samples, len(cond_vector), X_emb_cv, data,\
                         date_feature, name_client_id, time_type, model_time, n_splits, opt_time, cv_params['xiP'], cv_params['quantile_index'])
         
-        # noise = torch.randn(n_samples, noise_dim)
-        noise = torch.FloatTensor(dclProcess(n_samples - 1, noise_dim)).to(device)
+        noise = torch.randn(n_samples, noise_dim)
+        # noise = torch.FloatTensor(dclProcess(n_samples - 1, noise_dim)).to(device)
         z = torch.cat([noise.to(device), torch.FloatTensor(cond_vector[:n_samples]).to(device)], axis=1).to(device)
         
         synth_data = supervisor(torch.cat([generator(z).detach(), torch.FloatTensor(cond_vector[:n_samples]).to(device)], dim=1)).detach().cpu().numpy()
@@ -1044,8 +1050,8 @@ def sample(n_samples, generator, supervisor, noise_dim, cond_vector, X_emb, enco
         synth_date, cond_vector, params = sample_cond_vector_with_time(n_samples, len(cond_vector), X_emb_cv, data,\
                         date_feature, name_client_id, time_type, model_time, n_splits, opt_time, cv_params['xiP'], cv_params['quantile_index'])
         
-        # noise = torch.randn(n_samples, noise_dim)
-        noise = torch.FloatTensor(dclProcess(n_samples - 1, noise_dim)).to(device)
+        noise = torch.randn(n_samples, noise_dim)
+        # noise = torch.FloatTensor(dclProcess(n_samples - 1, noise_dim)).to(device)
         z = torch.cat([noise.to(device), torch.FloatTensor(cond_vector).to(device)], axis=1).to(device)
         
         synth_data = supervisor(torch.cat([generator(z).detach(), torch.FloatTensor(cond_vector[:n_samples]).to(device)], dim=1)).detach().cpu().numpy()

@@ -36,8 +36,8 @@ from sklearn.manifold import TSNE
 def plot_hist_categorical(data, synth_df, feat_name, tick=50):
     plt.subplots(figsize=(10, 5), dpi=100)
 
-    plt.hist(data[feat_name], alpha=0.6, label='Real', bins=np.arange(0, data[feat_name].value_counts().shape[0], tick), color='black', rwidth=0.8)
-    plt.hist(synth_df[feat_name], alpha=0.6, label='Synth', bins=np.arange(0, data[feat_name].value_counts().shape[0], tick), color='red', rwidth=0.8)
+    plt.hist(data[feat_name], alpha=0.6, label='Real', bins=np.arange(0, data[feat_name].value_counts().shape[0], tick), color='black', rwidth=0.8, density=True)
+    plt.hist(synth_df[feat_name], alpha=0.6, label='Synth', bins=np.arange(0, data[feat_name].value_counts().shape[0], tick), color='red', rwidth=0.8, density=True)
 
     plt.legend()
     plt.tick_params(axis='x', which='both', bottom=False, labelbottom=False)

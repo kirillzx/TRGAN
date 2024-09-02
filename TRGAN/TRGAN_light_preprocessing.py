@@ -169,6 +169,44 @@ def learn_rounding_digits(data):
     return None
 
 
+def learn_round(data, num_feat_names, time_feature):
+    if time_feature != '':
+        data[num_feat_names[:-3]] = data[num_feat_names[:-3]].apply(lambda x: round(x, sys.float_info.dig - 1))
+
+        round_array = []
+        for col in num_feat_names[:-3]:
+            round_array.append(learn_rounding_digits(data[col]))
+            
+    else:
+        data[num_feat_names] = data[num_feat_names].apply(lambda x: round(x, sys.float_info.dig - 1))
+
+        round_array = []
+        for col in num_feat_names:
+            round_array.append(learn_rounding_digits(data[col]))
+
+    return round_array
+
+
+def make_round(data, round_array, time_feature):
+    data = copy.deepcopy(data)
+    
+    if time_feature != '':
+        for i in range(len(num_feat_names)-3):
+            if round_array[i] == 0:
+                data[num_feat_names[i]] = data[num_feat_names[i]].apply(lambda x: round(x))
+            else:
+                data[num_feat_names[i]] = data[num_feat_names[i]].apply(lambda x: round(x, round_array[i]))
+            
+    else:
+        for i in range(len(num_feat_names)):
+            if round_array[i] == 0:
+                data[num_feat_names[i]] = data[num_feat_names[i]].apply(lambda x: round(x))
+            else:
+                data[num_feat_names[i]] = data[num_feat_names[i]].apply(lambda x: round(x, round_array[i]))
+            
+    return data
+
+
 
 def prob_int_transform(data: np.array) -> np.array:
     scaler_01 = MinMaxScaler()
