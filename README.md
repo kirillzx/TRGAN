@@ -1,7 +1,8 @@
 # TRGAN: A Time-Dependent Generative Adversarial Network for Synthetic Transactional Data Generation
 ### Kirill Zakharov, Elizaveta Stavinova, Anton Lysenko
 
-The official realisation of the prposed method TRGAN (link on the article will be available later)
+The official realisation of the prposed method TRGAN
+
 Cite:
 
 @inproceedings{10.1145/3641067.3641076,
