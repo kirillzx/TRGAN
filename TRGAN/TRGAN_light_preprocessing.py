@@ -187,7 +187,7 @@ def learn_round(data, num_feat_names, time_feature):
     return round_array
 
 
-def make_round(data, round_array, time_feature):
+def make_round(data, round_array, num_feat_names, time_feature):
     data = copy.deepcopy(data)
     
     if time_feature != '':
