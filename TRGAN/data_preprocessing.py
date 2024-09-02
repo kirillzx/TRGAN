@@ -38,6 +38,7 @@ def load_data(path: str, name: str) -> pd.DataFrame:
         
     elif name == 'data_uk_clean':
         data = pd.read_csv('Data/data_uk_clean.csv')[['account_id', 'amount', 'balance', 'description', 'date', 'id', 'type', 'tcode']]
+        # data['amount'] = data['amount'] + np.abs(data['amount'].min()) + 1
         data['date'] = pd.to_datetime(data['date'], format='mixed')
         data['date'] = pd.to_datetime(data['date'].dt.date)
         data = data[data['account_id'].isin(data['account_id'].value_counts().index[np.where(data['account_id'].value_counts() > 2)[0]])]

@@ -592,6 +592,9 @@ def inverse_transform(synth_data: np.array, latent_dim: dict, onehot_cols:list, 
         synth_df['SECOND'] = synth_df['SECOND'].astype(str).apply(lambda x: x.zfill(2))
         synth_df[time_feature] = synth_df[['HOUR', 'MINUTE', 'SECOND']].apply(lambda row: ':'.join(row.values), axis=1)
         synth_df = synth_df.drop(['HOUR', 'MINUTE', 'SECOND'], axis=1)
+        
+    synth_df = synth_df.sample(frac=1)
+    synth_df = synth_df.reset_index(drop=True)
     
     return synth_df
 

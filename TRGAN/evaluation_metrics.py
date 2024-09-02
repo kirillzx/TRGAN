@@ -25,16 +25,16 @@ NUMERICAL
 '''
 
 def evaluate_numerical(data_array, index):
-    mean_values = list(map(lambda x: x.mean(), data_array))
-    std_values = list(map(lambda x: x.std(), data_array))
-    kurt_values = list(map(lambda x: x.kurtosis(), data_array))
-    skew_values = list(map(lambda x: x.skew(), data_array))
-    js_values = list(map(lambda x: jensenshannon(np.abs(np.sort(data_array[0])), np.abs(np.sort(x))), data_array))
-    ks_values = list(map(lambda x: ks_2samp(data_array[0], x)[0], data_array))
-    wd_values = list(map(lambda x: wasserstein_distance(data_array[0], x), data_array))
+    mean_values = list(map(lambda x: round(x.mean(), 1), data_array))
+    std_values = list(map(lambda x: round(x.std(), 1), data_array))
+    kurt_values = list(map(lambda x: round(x.kurtosis(), 1), data_array))
+    skew_values = list(map(lambda x: round(x.skew(), 1), data_array))
+    js_values = list(map(lambda x: round(jensenshannon(np.abs(np.sort(data_array[0])), np.abs(np.sort(x))), 4), data_array))
+    # ks_values = list(map(lambda x: ks_2samp(data_array[0].values, x.values)[1], data_array))
+    wd_values = list(map(lambda x: round(wasserstein_distance(data_array[0], x), 2), data_array))
 
-    metrics = np.array([mean_values, std_values, kurt_values, skew_values, js_values, ks_values, wd_values]).T
-    res_df = pd.DataFrame(metrics, columns=['Mean', 'Std', 'Kurtosis', 'Skewness', 'D_JS', 'KS2test', 'Wassertein distance'],\
+    metrics = np.array([mean_values, std_values, kurt_values, skew_values, js_values, wd_values]).T
+    res_df = pd.DataFrame(metrics, columns=['Mean', 'Std', 'Kurtosis', 'Skewness', 'D_JS', 'Wassertein distance'],\
                            index=index)
 
     return res_df
