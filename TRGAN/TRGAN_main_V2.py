@@ -243,15 +243,15 @@ def encode_continuous_embeddings(X, feat_names, type_scale='Autoencoder', epochs
 
         X_cont = encoder_cont_emb(torch.FloatTensor(data[feat_names].values).to(device)).detach().cpu().numpy()
         
-        val_arr = []
+        # val_arr = []
         index_arr = []
 
         for i in range(X_cont.shape[1]):
             temp = np.array(sorted(list(zip(X_cont[:, i], np.arange(len(X_cont)))), key=lambda x: x[0]))
-            val_arr.append(temp[:, 0])
+            # val_arr.append(temp[:, 0])
             index_arr.append(temp[:, 1])
             
-        val_arr = np.array(val_arr).T
+        # val_arr = np.array(val_arr).T
         index_arr = np.array(index_arr).T.astype(int)
         
         
@@ -627,36 +627,34 @@ class Generator(nn.Module):
         self.tanh = nn.Tanh()
         self.layernorm0 = nn.LayerNorm(self.h_dim)
 
-        self.feed_forward_generator_layers = nn.ModuleList(
-            [nn.Sequential(
-            nn.Linear(self.h_dim, self.h_dim),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(self.h_dim, self.h_dim)
-        ) for _ in range(self.num_blocks)]
-        )
+        # self.feed_forward_generator_layers = nn.ModuleList(
+        #     [nn.Sequential(
+        #     nn.Linear(self.h_dim, self.h_dim),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(self.h_dim, self.h_dim)
+        # ) for _ in range(self.num_blocks)]
+        # )
 
         self.feed_forward_generator_layers2 = nn.ModuleList(
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
-            nn.LeakyReLU(0.1),
+            nn.LayerNorm(self.h_dim),
+            nn.LeakyReLU(0),
             # nn.Dropout(0.2),
             nn.Linear(self.h_dim, self.h_dim),
-            nn.LeakyReLU(0.1),
+            nn.LayerNorm(self.h_dim),
+            nn.LeakyReLU(0),
             # nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
-        self.layernorm_layers_1 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
-        self.layernorm_layers_2 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
-
-    def init_weights(self):
-        torch.nn.init.normal_(self.fc1.weight, 0, 0.02)
-        torch.nn.init.normal_(self.fc2.weight, 0, 0.02)
-
+        # self.layernorm_layers_1 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
+        # self.layernorm_layers_2 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
             
     def forward(self, x):
         out = self.layernorm0(self.relu(self.fc1(x)))
+        # out = self.relu(self.fc1(x))
         
         for i in range(self.num_blocks):
             res = out
@@ -665,17 +663,12 @@ class Generator(nn.Module):
 
             #add & norm
             out += res
-            out = self.layernorm_layers_1[i](out)
-
-            # #feed forward
-            # res = out
-            # out = self.feed_forward_generator_layers[i](out)
-            # # #add & norm
-            # out += res
-            # out = self.layernorm_layers_2[i](out)
-
+         
         out = self.fc2(out)
         return self.tanh(out)
+
+
+
 
 
 class Supervisor(nn.Module):
@@ -696,53 +689,42 @@ class Supervisor(nn.Module):
 
         self.layernorm0 = nn.LayerNorm(self.h_dim)
    
-        self.feed_forward_generator_layers = nn.ModuleList(
-            [nn.Sequential(
-            nn.Linear(self.h_dim, self.h_dim),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(self.h_dim, self.h_dim)
-        ) for _ in range(self.num_blocks)]
-        )
+        # self.feed_forward_generator_layers = nn.ModuleList(
+        #     [nn.Sequential(
+        #     nn.Linear(self.h_dim, self.h_dim),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(self.h_dim, self.h_dim)
+        # ) for _ in range(self.num_blocks)]
+        # )
 
         self.feed_forward_generator_layers2 = nn.ModuleList(
             [nn.Sequential(
             nn.Linear(self.h_dim, self.h_dim),
-            nn.LeakyReLU(0.1),
+            nn.LayerNorm(self.h_dim),
+            nn.LeakyReLU(0),
             # nn.Dropout(0.2),
             nn.Linear(self.h_dim, self.h_dim),
-            nn.LeakyReLU(0.1),
+            nn.LayerNorm(self.h_dim),
+            nn.LeakyReLU(0),
             # nn.Dropout(0.2),
         ) for _ in range(self.num_blocks)]
         )
 
-        self.layernorm_layers_1 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
-        self.layernorm_layers_2 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
-
-
-    def init_weights(self):
-        torch.nn.init.normal_(self.fc1.weight, 0, 0.02)
-        torch.nn.init.normal_(self.fc2.weight, 0, 0.02)
+        # self.layernorm_layers_1 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
+        # self.layernorm_layers_2 = nn.ModuleList([nn.LayerNorm(self.h_dim) for _ in range(self.num_blocks)])
 
             
     def forward(self, x):
         out = self.layernorm0(self.relu(self.fc1(x)))
+        # out = self.relu(self.fc1(x))
         
         for i in range(self.num_blocks):
             res = out
 
             out = self.feed_forward_generator_layers2[i](out)
 
-            #add & norm
             out += res
-            out = self.layernorm_layers_1[i](out)
-
-            # #feed forward
-            # res = out
-            # out = self.feed_forward_generator_layers[i](out)
-            # # #add & norm
-            # out += res
-            # out = self.layernorm_layers_2[i](out)
 
         out = self.fc2(out)
         return self.tanh(out)
@@ -844,6 +826,9 @@ def grad_penalty(discriminator, real_data, gen_data, device):
         
         return 10*(torch.max(torch.zeros(1,dtype=torch.double).to(device), gradients_norm.mean() - 1) ** 2)
 
+
+
+    
 def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, batch_size: int = 2**9, lr_rates: list = [3e-4, 3e-4, 3e-4, 3e-4],\
                      num_epochs: int = 30, num_blocks_gen=1, num_blocks_dis=2, h_dim=2**7, lambda1=3, alpha=0.75, device='cpu'):
    
@@ -958,6 +943,7 @@ def train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise: int = 5, b
         loss_array.append([disc_loss.item(), disc2_loss.item(), gen_loss.item(), supervisor_loss2.item()])
 
     return generator, supervisor, loss_array, discriminator, discriminator2
+
 
 ################################################################################################
 

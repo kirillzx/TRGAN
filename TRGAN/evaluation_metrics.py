@@ -12,6 +12,7 @@ from sdmetrics.single_table import NewRowSynthesis
 from sdmetrics.column_pairs import ContingencySimilarity
 from sklearn.metrics import f1_score, recall_score, roc_auc_score, mean_squared_error, r2_score
 from IPython.display import display
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, LabelEncoder
 
 import keras
 from keras.layers import Input, Dense, Activation, Dropout,Lambda, LSTM, BatchNormalization
@@ -25,13 +26,13 @@ NUMERICAL
 '''
 
 def evaluate_numerical(data_array, index):
-    mean_values = list(map(lambda x: round(x.mean(), 1), data_array))
-    std_values = list(map(lambda x: round(x.std(), 1), data_array))
-    kurt_values = list(map(lambda x: round(x.kurtosis(), 1), data_array))
-    skew_values = list(map(lambda x: round(x.skew(), 1), data_array))
+    mean_values = list(map(lambda x: round(x.mean(), 3), data_array))
+    std_values = list(map(lambda x: round(x.std(), 3), data_array))
+    kurt_values = list(map(lambda x: round(x.kurtosis(), 3), data_array))
+    skew_values = list(map(lambda x: round(x.skew(), 3), data_array))
     js_values = list(map(lambda x: round(jensenshannon(np.abs(np.sort(data_array[0])), np.abs(np.sort(x))), 4), data_array))
     # ks_values = list(map(lambda x: ks_2samp(data_array[0].values, x.values)[1], data_array))
-    wd_values = list(map(lambda x: round(wasserstein_distance(data_array[0], x), 2), data_array))
+    wd_values = list(map(lambda x: round(wasserstein_distance(data_array[0], x), 3), data_array))
 
     metrics = np.array([mean_values, std_values, kurt_values, skew_values, js_values, wd_values]).T
     res_df = pd.DataFrame(metrics, columns=['Mean', 'Std', 'Kurtosis', 'Skewness', 'D_JS', 'Wassertein distance'],\
@@ -58,21 +59,42 @@ def evaluate_numerical_cashflow(data_array, index):
 Categorical
 '''
 
-def evaluate_categorical(data_array, index, data_cont_array):
-    tv_values = list(map(lambda x: TVComplement.compute(real_data=data_array[0], synthetic_data=x), data_array))
-    # new_rows_values =  list(map(lambda x: NewRowSynthesis.compute(data_array[0], synthetic_data=x,\
-    #                             metadata=metadata, numerical_match_tolerance=0.4, synthetic_sample_size=10_000), data_array))
+def evaluate_categorical(data_array, index, mcc_name):
+    data_array = copy.deepcopy(data_array)
     
-    cont_sim_value = list(map(lambda x: ContingencySimilarity.compute(real_data=data_cont_array[0], synthetic_data=x), data_cont_array))
-    val_counts = list(map(lambda x: int(x.value_counts().shape[0]), data_array))
+    if data_array[0][mcc_name].dtype == 'int' or data_array[0][mcc_name].dtype == 'float':
+        tv_values = list(map(lambda x: round(TVComplement.compute(real_data=data_array[0][mcc_name], synthetic_data=x[mcc_name]), 3), data_array))
+    
+        # cont_sim_value = list(map(lambda x: ContingencySimilarity.compute(real_data=data_array[0][data_cont_array], synthetic_data=x[data_cont_array]), data_array))
+        val_counts = list(map(lambda x: round(int(x[mcc_name].value_counts().shape[0])), data_array))
 
-    js_divergence = list(map(lambda x: jensenshannon(data_array[0], x), data_array))
+        js_divergence = list(map(lambda x: round(jensenshannon(data_array[0][mcc_name], x[mcc_name]), 5), data_array))
 
-    res_df = pd.DataFrame(np.array([tv_values, cont_sim_value, val_counts, js_divergence]).T,\
-                        columns=['Total Variation', 'Contingency Similarity', 'Values count', 'D_JS'], index=index)
+        res_df = pd.DataFrame(np.array([tv_values, val_counts, js_divergence]).T,\
+                            columns=['Total Variation', 'Values count', 'D_JS'], index=index)
+        
+    elif data_array[0][mcc_name].dtype == 'object':
+        data_array_le = []
+        le2 = LabelEncoder()
+        
+        data_array[0][mcc_name] = le2.fit_transform(data_array[0][mcc_name])
+        data_array_le.append(data_array[0])
+        
+        for df in data_array[1:]:
+            df[mcc_name] = le2.transform(df[mcc_name])
+        
+            
+            data_array_le.append(df)
+        
+        tv_values = list(map(lambda x: round(TVComplement.compute(real_data=data_array_le[0][mcc_name], synthetic_data=x[mcc_name]), 3), data_array_le))
+        val_counts = list(map(lambda x: round(int(x[mcc_name].value_counts().shape[0])), data_array_le))
+
+        js_divergence = list(map(lambda x: round(jensenshannon(data_array_le[0][mcc_name], x[mcc_name]), 5), data_array_le))
+
+        res_df = pd.DataFrame(np.array([tv_values, val_counts, js_divergence]).T,\
+                            columns=['Total Variation', 'Values count', 'D_JS'], index=index)
 
     return res_df
-
 
 def evaluate_new_rows(data_array, index, metadata):
 

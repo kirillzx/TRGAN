@@ -194,7 +194,7 @@ def train(X_emb, cond_vector, latent_dim, dim_noise=15, epochs=40, experiment_id
     else:
         generator, supervisor, loss_array, discriminator, discriminator2 = train_generator(X_emb, cond_vector, dim_Vc, dim_X_emb, dim_noise,\
                                         batch_size=2**9, lr_rates=[3e-4, 3e-4, 3e-4, 3e-4], num_epochs=epochs, num_blocks_gen=num_blocks_gen,\
-                                        num_blocks_dis=num_blocks_dis, h_dim=h_dim, lambda1=3, alpha=0.7, device=DEVICE)
+                                        num_blocks_dis=num_blocks_dis, h_dim=h_dim, lambda1=3, alpha=0.8, device=DEVICE)
         
         torch.save(generator.state_dict(), f'{DIRECTORY}TRGAN_generator_exp_{experiment_id}.pt')
         torch.save(supervisor.state_dict(), f'{DIRECTORY}TRGAN_supervisor_exp_{experiment_id}.pt')
